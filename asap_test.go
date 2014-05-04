@@ -7,140 +7,111 @@ import (
 	"testing"
 )
 
-// Define a trivial processor as a data source. The undelying data is a local slice of ints.
-type intSource struct {
-	s []int
+type Options struct {
+	intSlice []int
+	winSize  int
+	quant    int
 }
 
-func NewIntSource(n int) *intSource {
-	return &intSource{(getRandomInts(n))}
+func randomFunc(idx uint64, ctx *Context, in ...Processor) (Value, error) {
+	opt := ctx.Options.(*Options)
+	if idx >= uint64(len(opt.intSlice)) {
+		return nil, ErrEndOfArray
+	}
+	return opt.intSlice[idx], nil
 }
 
-// Returns a Slice. Implements required VSlice method.
-func (is *intSource) Get(start, end uint64) (*Slice, error) {
-	return NewSlice(start, end, intSource{is.s[start:end]}), nil
+func windowFunc(idx uint64, ctx *Context, inputs ...Processor) (Value, error) {
+	opt := ctx.Options.(*Options)
+	win := uint64(opt.winSize)
+	step := uint64(ctx.Skip)
+	in := inputs[0]
+	out := make([]int, win, win)
+	k := 0
+	for i := idx * step; i < idx*step+win; i++ {
+		v, err := in(i)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = v.(int)
+		k++
+	}
+	return out, nil
 }
 
-// Sorter takes a slice of ints and sorts them.
-type Sorter struct {
-	*BaseProcessor
-}
-
-func sortProc(start, end uint64, in ...Processor) (*Slice, error) {
-
-	// Copy the data so we can sort in place.
-	l := end - start
-	s := make([]int, l, l)
-	copy(s, in[0].(*intSource).s[start:end])
-
-	// Sort the data.
-	sort.Ints(s)
-	return NewSlice(start, end, s), nil
-}
-
-// Decile takes a sorted slice of ints and returns a slice with the deciles (nine values).
-type Decile struct {
-	*BaseProcessor
-}
-
-func decileProc(start, end uint64, in ...Processor) (*Slice, error) {
-
-	// Allocate a slice for the results
-	l := end - start
-	bin := int(l / 10)
-	s := make([]int, 9, 9)
-	sl, err := in[0].Get(start, end)
+func sortFunc(idx uint64, ctx *Context, inputs ...Processor) (Value, error) {
+	in := inputs[0]
+	v, err := in(idx)
 	if err != nil {
 		return nil, err
 	}
-	input := sl.Data
-	for k := 0; k < 9; k++ {
-		s[k] = input.([]int)[bin*(k+1)]
+	s := v.([]int)
+	out := make([]int, len(s), len(s))
+	copy(out, s)
+	sort.Ints(out)
+	return out, nil
+}
+
+func quantileFunc(idx uint64, ctx *Context, inputs ...Processor) (Value, error) {
+	opt := ctx.Options.(*Options)
+	q := opt.quant
+	in := inputs[0]
+	v, err := in(idx)
+	if err != nil {
+		return nil, err
 	}
-	return NewSlice(0, 1, s), nil
-}
-
-// Window returns a slice of ints.
-type Window struct {
-	step, length int
-	*BaseProcessor
-}
-
-func NewWindow(step, length int) *Window {
-	return &Window{step: step, length: length}
-}
-
-func windowProc(start, end uint64, in ...Processor) (*Slice, error) {
-
-	// sl, err := in[0].Get(start, end)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// input := sl.Data
-	//	inLen := len(input)
-
-	// calculate number of outpur slices.
-
-	return NewSlice(start, end, nil), nil
-}
-
-func TestASAPSort(t *testing.T) {
-
-	// Create an int source.
-	is := NewIntSource(100)
-	t.Logf("intSource: %v", is)
-	// Create a sorter.
-	sorter := Sorter{&BaseProcessor{Inputs: []Processor{is}, Process: sortProc}}
-	// Create a decile processor.
-	decile := Decile{&BaseProcessor{Inputs: []Processor{sorter}, Process: decileProc}}
-	// Finally, create app. (Initializes all the processors.)
-	app := NewApp("sort test", is, sorter, decile)
-	t.Logf("created app: %s", app.Name)
-	t.Logf("intSource ID: %d", app.ID(is))
-	t.Logf("sorter ID: %d", app.ID(sorter))
-	t.Logf("decile ID: %d", app.ID(decile))
-
-	// Sort the slice.
-	sortedSlice, err := sorter.Get(0, uint64(len(is.s)))
-	FatalIf(t, err)
-	t.Logf("sorted: %v", sortedSlice)
-	if !isOrdered([]int(sortedSlice.Data.([]int))) {
-		t.Fatal("not in order")
+	s := v.([]int)
+	bin := len(s) / q
+	out := make([]int, q-1, q-1)
+	for k := 0; k < q-1; k++ {
+		out[k] = s[bin*(k+1)]
 	}
 
-	// Sort a subset of the slice.
-	sortedSlice, err = sorter.Get(2, 8)
-	FatalIf(t, err)
-	t.Logf("sorted: %v", sortedSlice)
-	if !isOrdered([]int(sortedSlice.Data.([]int))) {
-		t.Fatal("not in order")
+	return out, nil
+}
+
+func TestQuantiles(t *testing.T) {
+
+	n := 10000
+	step := 30
+	opt := &Options{
+		intSlice: getRandomInts(n),
+		winSize:  100,
+		quant:    4,
 	}
 
-	// Compute deciles.
-	decileSlice, e2 := decile.Get(0, uint64(len(is.s)))
-	FatalIf(t, e2)
-	t.Logf("deciles: %v", decileSlice)
+	app := NewApp("test")
+	randomInts := app.AddSource(randomFunc, opt, nil)
+	window := app.AddSkip(step, windowFunc, opt, randomInts)
+	sorted := app.Add(sortFunc, opt, window)
+	quantile := app.Add(quantileFunc, opt, sorted)
+
+	var i uint64
+	for {
+		v, e := quantile(i)
+		if e == ErrEndOfArray {
+			break
+		}
+		if e != nil {
+			t.Fatal(e)
+		}
+		t.Logf("window[%3d]: %v", i, v)
+		i++
+	}
+
+	// x, e := window(10)
+	// FatalIf(t, e)
+	// t.Logf("window[%3d]: %v", 10, x)
+	// x, e = window(12)
+	// FatalIf(t, e)
+	// t.Logf("window[%3d]: %v", 12, x)
+	// x, e = window(20)
+	// FatalIf(t, e)
+	// t.Logf("window[%3d]: %v", 20, x)
 }
 
 func TestDeciles(t *testing.T) {
 
-	// Create an int source.
-	is := NewIntSource(100)
-	// Create a sorter.
-	sorter := Sorter{&BaseProcessor{Inputs: []Processor{is}, Process: sortProc}}
-	// Create a decile processor.
-	decile := Decile{&BaseProcessor{Inputs: []Processor{sorter}, Process: decileProc}}
-	// Finally, create app. (Initializes all the processors.)
-	app := NewApp("sort test", is, sorter, decile)
-	t.Logf("created app: %s", app.Name)
-	t.Logf("intSource ID: %d", app.ID(is))
-	t.Logf("sorter ID: %d", app.ID(sorter))
-	t.Logf("decile ID: %d", app.ID(decile))
-
-	// Compute deciles.
-	decileSlice, err := decile.Get(0, uint64(len(is.s)))
-	FatalIf(t, err)
-	t.Logf("deciles: %v", decileSlice)
 }
 
 func getRandomInts(n int) []int {

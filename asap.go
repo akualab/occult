@@ -41,29 +41,111 @@ Design components:
 */
 package asap
 
-type App struct {
-	Name  string
-	Procs []Processor
-	ids   map[Processor]uint32
+import "errors"
+
+var (
+	ErrEndOfArray = errors.New("reached the end of the array")
+)
+
+// All processors must be implemented using this function type.
+type ProcFunc func(key uint64, ctx *Context, in ...Processor) (Value, error)
+
+// The context provides internal information for processor instances.
+// The Options field can be used to pass parameters to processors.
+type Context struct {
+	Options  interface{}
+	Skip     int
+	cache    *cache
+	procFunc ProcFunc
+	proc     Processor
+	inputs   []Processor
+	isSource bool
 }
 
-func NewApp(name string, procs ...Processor) *App {
+// An App coordinates the execution of a set of processors.
+type App struct {
+	Name  string
+	procs map[int]*Context
+}
 
-	app := &App{Name: name, Procs: procs}
-	app.ids = make(map[Processor]uint32)
-	for k, v := range procs {
-		app.ids[v] = uint32(k)
-	}
+// Creates a new App.
+func NewApp(name string) *App {
+
+	app := &App{Name: name}
+	app.procs = make(map[int]*Context)
 	return app
 }
 
-func (a *App) ID(proc Processor) uint32 {
-	return a.ids[proc]
+// The value returned by Processors.
+type Value interface{}
+
+// A Processor instance.
+// Once the processor instance is created, teh parameters and inputs cannot
+// be changed.
+type Processor func(key uint64) (Value, error)
+
+// Same as Add but indicating that this is a presistent source.
+// The system will attempt to use the same cluster node for a given key. This
+// affinity will increase the cache hit rate and minimize reads from the persistent
+// source.
+func (app *App) AddSource(fn ProcFunc, opt interface{}, inputs ...Processor) Processor {
+
+	ctx := app.createContext(fn, opt, inputs...)
+	ctx.isSource = true
+	ctx.proc = procInstance(ctx)
+	return ctx.proc
 }
 
-type Frame struct {
-	Data interface{}
-	proc Processor
+// Same as Add but inputs are sub-sampled.
+// For example if skip = 4 and key = 10, then the inputs are passed inKey = 4 * 10 = 40
+func (app *App) AddSkip(skip int, fn ProcFunc, opt interface{}, inputs ...Processor) Processor {
+
+	ctx := app.createContext(fn, opt, inputs...)
+	ctx.Skip = skip
+	ctx.proc = procInstance(ctx)
+	return ctx.proc
+}
+
+// Adds a ProcFunc to the app.
+// The instance may use opt to retrieve parameters and is wired
+// using the inputs.
+func (app *App) Add(fn ProcFunc, opt interface{}, inputs ...Processor) Processor {
+
+	ctx := app.createContext(fn, opt, inputs...)
+	ctx.proc = procInstance(ctx)
+	return ctx.proc
+}
+
+// Closure to genarate a Processor with parameter id and cache.
+func procInstance(ctx *Context) Processor {
+
+	return func(key uint64) (Value, error) {
+
+		// Check if the data is in the cache.
+		if v, ok := ctx.cache.Get(key); ok {
+			//fmt.Printf("DEBUG: CACHE HIT in proc %d\n", id)
+			return v, nil
+		}
+		result, err := ctx.procFunc(key, ctx, ctx.inputs...)
+		if err != nil {
+			return nil, err
+		}
+		ctx.cache.Set(key, result)
+		return result, nil
+	}
+}
+
+func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor) *Context {
+	id := len(app.procs)
+	ctx := &Context{
+		cache:    newCache(),
+		Skip:     1,
+		procFunc: fn,
+		Options:  opt,
+		inputs:   inputs,
+	}
+	app.procs[id] = ctx
+	return ctx
 }
 
 type Slice struct {
@@ -71,7 +153,7 @@ type Slice struct {
 	Data       interface{}
 }
 
-func NewSlice(start, end uint64, data interface{}) *Slice {
+func NewSlice(start, end uint64, data interface{}) Value {
 	return &Slice{
 		Data:  data,
 		Start: start,
@@ -79,80 +161,15 @@ func NewSlice(start, end uint64, data interface{}) *Slice {
 	}
 }
 
-// Processing units must implement the Processor interface.
-// A Processor can pull data from its inputs and makes the processed data available
-// to other processors by using the Get() method.
-type Processor interface {
-	// Output slice.
-	Get(start, end uint64) (*Slice, error)
-}
-
-// A cache (not implemented.)
+// A cache (ony for testing.)
 // TODO: Implement cache using a circular buffer.
 type cache struct {
+	m map[uint64]Value
 }
 
-func (c *cache) Get(start, end uint64) (sl *Slice, ok bool) { return nil, false }
-func (c *cache) Set(start, end uint64, sl *Slice)           {}
-
-// Type of functions implementing the actual processing.
-type ProcFunc func(start, end uint64, in ...Processor) (*Slice, error)
-
-// Implements the basic functionality of a Processor. Embed in the custom Process struct.
-type BaseProcessor struct {
-	Process ProcFunc
-	Inputs  []Processor
-	cache
-	name string
+func newCache() *cache { return &cache{m: make(map[uint64]Value)} }
+func (c *cache) Get(key uint64) (val Value, ok bool) {
+	val, ok = c.m[key]
+	return
 }
-
-func (p *BaseProcessor) Get(start, end uint64) (*Slice, error) {
-
-	// Check if the data is in the cache.
-	if sl, ok := p.cache.Get(start, end); ok {
-		return sl, nil
-	}
-
-	result, err := p.Process(start, end, p.Inputs...)
-	if err != nil {
-		return nil, err
-	}
-	p.cache.Set(start, end, result)
-	return result, nil
-}
-
-// Returns processor id.
-// The id must be unique and consistent across hosts.
-// To generate ids automaticaly, we apply a hash function to a
-// string that is composed of teh IDs of teh input processors.
-// IDs are computed recursively when they are first requested.
-// NOTE: this approach assumes that the topology of the processors
-// is static.
-// func (p *BaseProcessor) ID() uint64 {
-
-// 	// If the ID is already generated, we are done.
-// 	if p.id != 0 {
-// 		return p.id
-// 	}
-
-// 	// Concatenate IDs from input processors to obtain a unique signature.
-// 	instr := bytes.NewBuffer([]byte{})
-// 	for _, v := range p.Inputs {
-// 		stringid := fmt.Sprintf("%d", v.ID())
-// 		instr.WriteString(stringid)
-// 		instr.WriteString(reflect.TypeOf(v).String())
-// 	}
-
-// 	// Apply hash function and convert result to uint64.
-// 	h := sha1.New()
-// 	io.WriteString(h, instr.String())
-
-// 	b := h.Sum(nil)
-// 	buf := bytes.NewReader(b)
-// 	err := binary.Read(buf, binary.LittleEndian, &p.id)
-// 	if err != nil {
-// 		log.Fatal("binary.Read failed: ", err)
-// 	}
-
-// 	return p.id
-// }
+func (c *cache) Set(key uint64, val Value) { c.m[key] = val }
