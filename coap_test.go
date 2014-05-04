@@ -1,4 +1,4 @@
-package asap
+package coap
 
 import (
 	"math/rand"
@@ -98,16 +98,6 @@ func TestQuantiles(t *testing.T) {
 		t.Logf("window[%3d]: %v", i, v)
 		i++
 	}
-
-	// x, e := window(10)
-	// FatalIf(t, e)
-	// t.Logf("window[%3d]: %v", 10, x)
-	// x, e = window(12)
-	// FatalIf(t, e)
-	// t.Logf("window[%3d]: %v", 12, x)
-	// x, e = window(20)
-	// FatalIf(t, e)
-	// t.Logf("window[%3d]: %v", 20, x)
 }
 
 func TestDeciles(t *testing.T) {
