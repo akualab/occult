@@ -1,5 +1,7 @@
 # Cache-Oriented Array Processing (COAP)
 
+`Copyright (c) 2013 AKUALAB INC., All rights reserved.`
+
 This is an experimental package to explore distributed aray processing architectures using the Go
 programming language.
 

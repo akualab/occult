@@ -1,3 +1,5 @@
+// Copyright (c) 2014 AKUALAB INC., All rights reserved.
+
 package coap
 
 import (

@@ -1,3 +1,5 @@
+// Copyright (c) 2014 AKUALAB INC., All rights reserved.
+
 // Cache-Oriented Array Processing (COAP)
 package coap
 
