@@ -36,6 +36,17 @@ implemented using COAP.
 
 (see coap_test.go)
 
+To run the example:
+
+`
+# If you need to install Go, see:
+# install: http://golang.org/doc/install
+# setup: http://golang.org/doc/code.html
+git clone https://github.com/akualab/coap
+cd coap
+go test -v
+`
+
 * Source randomFunc provides an array of ints
 * windowFunc is applied every N samples, returns a slice of ints of length winSize.
 * sortFunc Sort sorts the slice of ints returned by the window.

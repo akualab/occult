@@ -15,6 +15,7 @@ type ProcFunc func(key uint64, ctx *Context, in ...Processor) (Value, error)
 type Context struct {
 	Options  interface{}
 	Skip     int
+	id       int
 	cache    *cache
 	procFunc ProcFunc
 	proc     Processor
@@ -24,8 +25,9 @@ type Context struct {
 
 // An App coordinates the execution of a set of processors.
 type App struct {
-	Name  string
-	procs map[int]*Context
+	Name   string
+	procs  map[int]*Context
+	nodeID int
 }
 
 // Creates a new App.
@@ -36,11 +38,20 @@ func NewApp(name string) *App {
 	return app
 }
 
+// Initializes app.
+// Must be called after adding processors and before execution.
+func (app *App) Init() {
+	// TODO: build graph of processors. We will use it to optimize
+	// the cluster and route requests to nodes.
+
+	// TODO: set nodeID. (Each cluster node must have a unique ID.)
+}
+
 // The value returned by Processors.
 type Value interface{}
 
 // A Processor instance.
-// Once the processor instance is created, teh parameters and inputs cannot
+// Once the processor instance is created, the parameters and inputs cannot
 // be changed.
 type Processor func(key uint64) (Value, error)
 
@@ -52,7 +63,7 @@ func (app *App) AddSource(fn ProcFunc, opt interface{}, inputs ...Processor) Pro
 
 	ctx := app.createContext(fn, opt, inputs...)
 	ctx.isSource = true
-	ctx.proc = procInstance(ctx)
+	ctx.proc = app.procInstance(ctx)
 	return ctx.proc
 }
 
@@ -62,7 +73,7 @@ func (app *App) AddSkip(skip int, fn ProcFunc, opt interface{}, inputs ...Proces
 
 	ctx := app.createContext(fn, opt, inputs...)
 	ctx.Skip = skip
-	ctx.proc = procInstance(ctx)
+	ctx.proc = app.procInstance(ctx)
 	return ctx.proc
 }
 
@@ -72,14 +83,39 @@ func (app *App) AddSkip(skip int, fn ProcFunc, opt interface{}, inputs ...Proces
 func (app *App) Add(fn ProcFunc, opt interface{}, inputs ...Processor) Processor {
 
 	ctx := app.createContext(fn, opt, inputs...)
-	ctx.proc = procInstance(ctx)
+	ctx.proc = app.procInstance(ctx)
 	return ctx.proc
 }
 
+// Returns the target node ID for key in context.
+// TODO: not implemented.
+func (app *App) targetNode(key uint64, ctx *Context) int {
+	return 0
+}
+
+// Returns the result of a remote execution.
+func (app *App) remote(key uint64, processID int) (Value, error) {
+	return nil, nil
+}
+
 // Closure to genarate a Processor with parameter id and cache.
-func procInstance(ctx *Context) Processor {
+func (app *App) procInstance(ctx *Context) Processor {
 
 	return func(key uint64) (Value, error) {
+
+		// TODO: implement remote execution.
+		// We received a request for a given key. In a cluster, we need
+		// to determine which node should do the work. Here is where we need
+		// to include the logic. We also need to work in batches to reduce the number
+		// of requests. Perhaps, we can use a default batch size so when we request
+		// work for key we also do the slice up to key+batchSize. If the this is the
+		// target node, continue work here.
+		if app.targetNode(key, ctx) != app.nodeID { // this is a placeholder!
+			val, err := app.remote(key, ctx.id)
+			return val, err
+		}
+
+		// Do local computation.
 
 		// Check if the data is in the cache.
 		if v, ok := ctx.cache.Get(key); ok {
@@ -103,6 +139,7 @@ func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor)
 		procFunc: fn,
 		Options:  opt,
 		inputs:   inputs,
+		id:       id,
 	}
 	app.procs[id] = ctx
 	return ctx
