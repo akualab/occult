@@ -100,7 +100,7 @@ func (app *App) remote(key uint64, processID int) (Value, error) {
 	return nil, nil
 }
 
-// Closure to genarate a Processor with parameter id and cache.
+// Closure to generate a Processor with parameter id and cache.
 func (app *App) procInstance(ctx *Context) Processor {
 
 	return func(key uint64) (Value, error) {
