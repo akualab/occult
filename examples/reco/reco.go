@@ -3,6 +3,8 @@
 // Example of a recommender system using matrix factorization.
 package main
 
+import "log"
+
 const (
 	// movie lense data set http://grouplens.org/datasets/movielens/
 	DataURL = "http://www.grouplens.org/system/files/ml-100k.zip"
@@ -19,5 +21,6 @@ func main() {
 	fn := downloadData()
 
 	// writes train and test data as small data files with ChunkLength lines.
-	writeChunks(fn)
+	dbTrain, dbTest := writeData(fn)
+	log.Printf("train: %s, test: %s", dbTrain, dbTest)
 }
