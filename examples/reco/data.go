@@ -68,6 +68,13 @@ func writeStore(f *zip.File) (dbName string) {
 	// create store
 	name := path.Base(f.Name)
 	dbName = path.Join(OutDir, name)
+
+	// Return if db exists.
+	if _, err := os.Stat(dbName); err == nil {
+		log.Printf("db %s already exist, skipping...", dbName)
+		return dbName
+	}
+
 	log.Printf("creating store %s", dbName)
 	db, err := store.NewStore(dbName)
 	fatalIf(err)

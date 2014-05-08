@@ -3,14 +3,17 @@
 // Cache-Oriented Array Processing (COAP)
 package coap
 
-import "errors"
+import (
+	"errors"
+	"log"
+)
 
 var (
 	ErrEndOfArray = errors.New("reached the end of the array")
 )
 
 // All processors must be implemented using this function type.
-type ProcFunc func(key uint64, ctx *Context, in ...Processor) (Value, error)
+type ProcFunc func(key uint64, ctx *Context) (Value, error)
 
 // The context provides internal information for processor instances.
 // The Options field can be used to pass parameters to processors.
@@ -23,6 +26,10 @@ type Context struct {
 	proc     Processor
 	inputs   []Processor
 	isSource bool
+}
+
+func (ctx *Context) Inputs() []Processor {
+	return ctx.inputs
 }
 
 // An App coordinates the execution of a set of processors.
@@ -84,8 +91,10 @@ func (app *App) AddSkip(skip int, fn ProcFunc, opt interface{}, inputs ...Proces
 // using the inputs.
 func (app *App) Add(fn ProcFunc, opt interface{}, inputs ...Processor) Processor {
 
+	log.Printf("DEBUG: input %+v", inputs[0])
 	ctx := app.createContext(fn, opt, inputs...)
 	ctx.proc = app.procInstance(ctx)
+	log.Printf("DEBUG: create context %+v", ctx)
 	return ctx.proc
 }
 
@@ -121,10 +130,13 @@ func (app *App) procInstance(ctx *Context) Processor {
 
 		// Check if the data is in the cache.
 		if v, ok := ctx.cache.Get(key); ok {
-			//fmt.Printf("DEBUG: CACHE HIT in proc %d\n", id)
+			//fmt.Printf("DEBUG: CACHE HIT in proc %d\n", ctx.id)
 			return v, nil
 		}
-		result, err := ctx.procFunc(key, ctx, ctx.inputs...)
+		result, err := ctx.procFunc(key, ctx)
+		log.Printf("\nDEBUG: key:%d, ctx:%+v", key, ctx)
+		log.Printf("DEBUG: in:%+v", ctx.inputs[0])
+		log.Printf("DEBUG: id:%d,  res:%v, err:%v", ctx.id, result, err)
 		if err != nil {
 			return nil, err
 		}

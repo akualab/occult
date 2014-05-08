@@ -15,7 +15,7 @@ type Options struct {
 	quant    int
 }
 
-func randomFunc(idx uint64, ctx *Context, in ...Processor) (Value, error) {
+func randomFunc(idx uint64, ctx *Context) (Value, error) {
 	opt := ctx.Options.(*Options)
 	if idx >= uint64(len(opt.intSlice)) {
 		return nil, ErrEndOfArray
@@ -23,11 +23,11 @@ func randomFunc(idx uint64, ctx *Context, in ...Processor) (Value, error) {
 	return opt.intSlice[idx], nil
 }
 
-func windowFunc(idx uint64, ctx *Context, inputs ...Processor) (Value, error) {
+func windowFunc(idx uint64, ctx *Context) (Value, error) {
 	opt := ctx.Options.(*Options)
 	win := uint64(opt.winSize)
 	step := uint64(ctx.Skip)
-	in := inputs[0]
+	in := ctx.inputs[0]
 	out := make([]int, win, win)
 	k := 0
 	for i := idx * step; i < idx*step+win; i++ {
@@ -41,8 +41,8 @@ func windowFunc(idx uint64, ctx *Context, inputs ...Processor) (Value, error) {
 	return out, nil
 }
 
-func sortFunc(idx uint64, ctx *Context, inputs ...Processor) (Value, error) {
-	in := inputs[0]
+func sortFunc(idx uint64, ctx *Context) (Value, error) {
+	in := ctx.inputs[0]
 	v, err := in(idx)
 	if err != nil {
 		return nil, err
@@ -54,10 +54,10 @@ func sortFunc(idx uint64, ctx *Context, inputs ...Processor) (Value, error) {
 	return out, nil
 }
 
-func quantileFunc(idx uint64, ctx *Context, inputs ...Processor) (Value, error) {
+func quantileFunc(idx uint64, ctx *Context) (Value, error) {
 	opt := ctx.Options.(*Options)
 	q := opt.quant
-	in := inputs[0]
+	in := ctx.inputs[0]
 	v, err := in(idx)
 	if err != nil {
 		return nil, err
