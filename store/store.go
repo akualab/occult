@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
+	"errors"
 
 	"github.com/jmhodges/levigo"
+)
+
+var (
+	ErrKeyNotFound = errors.New("key not found")
 )
 
 type Store struct {
@@ -48,6 +53,9 @@ func (store *Store) GetInt32(key uint64) (int32, error) {
 	v, err := store.db.Get(store.ro, kk)
 	if err != nil {
 		return 0, err
+	}
+	if v == nil {
+		return 0, ErrKeyNotFound
 	}
 	return bytesToInt32(v)
 }
@@ -100,7 +108,10 @@ func (store *Store) Get(key uint64) (value interface{}, err error) {
 	}
 	v, err := store.db.Get(store.ro, kk)
 	if err != nil {
-		return
+		return nil, err
+	}
+	if v == nil {
+		return 0, ErrKeyNotFound
 	}
 	r := bytes.NewReader(v)
 	dec := gob.NewDecoder(r)

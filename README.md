@@ -38,7 +38,7 @@ implemented using COAP.
 
 (see coap_test.go)
 
-To run the example:
+To run coap_test:
 
 `
 # If you need to install Go, see:
@@ -48,6 +48,17 @@ git clone https://github.com/akualab/coap
 cd coap
 go test -v
 `
+
+To run recommendation system examples/reco
+
+`
+# install leveldb, om macosx:
+brew install leveldb
+# run:
+cd examples/reco
+go run *.go
+`
+
 
 * Source randomFunc provides an array of ints
 * windowFunc is applied every N samples, returns a slice of ints of length winSize.

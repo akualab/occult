@@ -25,6 +25,15 @@ func TestStoreInt(t *testing.T) {
 	if v != 55 {
 		t.Fatalf("expected 55, got %d", v)
 	}
+
+	// key not in db
+	v, err = db.GetInt32(uint64(776688))
+	if err == nil {
+		t.Fatalf("expected err not nil, got nil")
+	}
+	if err != ErrKeyNotFound {
+		t.Fatalf("expected ErrNoKey got %+v", v)
+	}
 }
 
 type T struct {
