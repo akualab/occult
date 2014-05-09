@@ -11,7 +11,7 @@ designed for scientific computation using large data sets. I also wanted to impr
 The typical use case is to process time series data. For example, in a data center,
 metrics can be processed to detect failures, degradation in performance, or any anomalies.
 A surveilance application may store images that need to be analyzed using computer vision
-algorithms. However, any application that involves lareg data sets can potentially be
+algorithms. However, any application that involves large data sets can potentially be
 implemented using COAP.
 
 ## Design Goals
@@ -40,25 +40,24 @@ implemented using COAP.
 
 To run coap_test:
 
-`
+```
 # If you need to install Go, see:
 # install: http://golang.org/doc/install
 # setup: http://golang.org/doc/code.html
 git clone https://github.com/akualab/coap
 cd coap
 go test -v
-`
+```
 
 To run recommendation system examples/reco
 
-`
+```
 # install leveldb, om macosx:
 brew install leveldb
 # run:
 cd examples/reco
 go run *.go
-`
-
+```
 
 * Source randomFunc provides an array of ints
 * windowFunc is applied every N samples, returns a slice of ints of length winSize.
@@ -78,16 +77,15 @@ The initial prototype is implemented in coap.go and only runs on a single host. 
 The implementation is only a few lines of code but appears to satisfy many of the requirements. Using the Go programming style, I chose to implement processors using functions. A processor is implemented usign the ProcFunc type. To add a processor to an app and wire its inputs, we use the methods:
 
 * app.Add()
-* app.AddSkip()
 * app.AddSource()
 
-These methods create the processor instance with specific parameters and inputs. AddSkip specifies how to sample the inputs. This may seem strange but is there to help determine the index of the source values which is needed to create affinity with a cluster node. AddSource hints the app that the processor instance is a persistent store whose access is slow.
+These methods create the processor instance with specific parameters and inputs. AddSource hints the app that the processor instance is a persistent store whose access is slow.
 
-Perhaps the most important aspect of the design is that affinity is not required. It's only there to optimize performance. This feature makes it incredibly easy to add and remove nodes and to allocate tasks in the cluster. For example, a node failure results in degraded performance because active requests will time out and some new requests will hit the persistent store. Performance will normalize after the caches are filled up again. When a node is overloaded due to skewed requests, a load balancing algorithms can be used to use a different node.
+Perhaps the most important aspect of the design is that affinity is not required. We want affinity to optimize performance. This design makes it incredibly easy to add and remove nodes and to allocate tasks in the cluster. For example, a node failure results in degraded performance because active requests will time out and some new requests will hit the persistent store. Performance will normalize after the caches are filled up again. When a node is overloaded due to skewed requests, a load balancing algorithms can be used to use a different node.
 
 ## Next Steps
 
-As you see this is a big idea with a very simple implementation. Let me know what you thin, does this makes sense? What use cases shoudl we target?
+As you see this is a big idea with a very simple implementation. Let me know what you think, does this makes sense? What use cases shoudl we target?
 
 Thanks! Leo Neumeyer, April 2014.
 * leo@akualab.com

@@ -3,6 +3,7 @@
 package coap
 
 import (
+	"log"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -13,6 +14,7 @@ type Options struct {
 	intSlice []int
 	winSize  int
 	quant    int
+	step     int
 }
 
 func randomFunc(idx uint64, ctx *Context) (Value, error) {
@@ -26,7 +28,7 @@ func randomFunc(idx uint64, ctx *Context) (Value, error) {
 func windowFunc(idx uint64, ctx *Context) (Value, error) {
 	opt := ctx.Options.(*Options)
 	win := uint64(opt.winSize)
-	step := uint64(ctx.Skip)
+	step := uint64(opt.step)
 	in := ctx.inputs[0]
 	out := make([]int, win, win)
 	k := 0
@@ -75,16 +77,16 @@ func quantileFunc(idx uint64, ctx *Context) (Value, error) {
 func TestQuantiles(t *testing.T) {
 
 	n := 10000
-	step := 30
 	opt := &Options{
 		intSlice: getRandomInts(n),
 		winSize:  100,
 		quant:    4,
+		step:     30,
 	}
 
 	app := NewApp("test")
 	randomInts := app.AddSource(randomFunc, opt, nil)
-	window := app.AddSkip(step, windowFunc, opt, randomInts)
+	window := app.Add(windowFunc, opt, randomInts)
 	sorted := app.Add(sortFunc, opt, window)
 	quantile := app.Add(quantileFunc, opt, sorted)
 
@@ -97,13 +99,33 @@ func TestQuantiles(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		t.Logf("window[%3d]: %v", i, v)
+		t.Logf("quantile[%3d]: %v", i, v)
 		i++
 	}
+
+	// test slice
+	values, err := sorted.Slice(100, 103)
+	FatalIf(t, err)
+	t.Logf("slice values: %#v", values)
 }
 
-func TestDeciles(t *testing.T) {
+func TestChannels(t *testing.T) {
 
+	opt := &Options{
+		intSlice: getRandomInts(1000),
+		winSize:  100,
+		quant:    4,
+	}
+	app := NewApp("test")
+	randomInts := app.AddSource(randomFunc, opt, nil)
+	ch := randomInts.ChanAll(0, 5)
+	for {
+		v, ok := <-ch
+		if !ok {
+			return
+		}
+		log.Printf("final got: %#v", v)
+	}
 }
 
 func getRandomInts(n int) []int {

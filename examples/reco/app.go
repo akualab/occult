@@ -3,14 +3,16 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/akualab/coap"
 	"github.com/akualab/coap/store"
 )
 
 type Options struct {
-	db        *store.Store
-	chunkSize int
+	db         *store.Store
+	chunkSize  int
+	numWorkers int
 }
 
 func movieFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
@@ -52,21 +54,41 @@ func ratingDistFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
 
 func aggRatingsFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
 
-	log.Printf("XXXXXXXXXXX AGG START idx:%d ctx:%#v", idx, ctx)
+	var err error
+	var in interface{}
+	if idx > 0 {
+		return nil, coap.ErrEndOfArray
+	}
 	dist := make([]int, 5, 5)
 	var j uint64
 	for j = 0; ; j++ {
-		log.Printf("XXXXXXXXXXX AGG LOOP j:%d", j)
-		in, err := ctx.Inputs()[0](j)
+		in, err = ctx.Inputs()[0](j)
 		if err != nil && err != coap.ErrEndOfArray {
-			log.Printf("********** %v %v", nil, err)
 			return nil, err // something is wrong
 		}
 		if err == coap.ErrEndOfArray {
-			log.Printf("XXXXXXXXXXX %v %v", dist, err)
-			return dist, err
+			return dist, nil
 		}
 		s := in.([]int)
+		for k, v := range s {
+			dist[k] += v
+		}
+	}
+}
+
+func concurrentRatingsFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
+	opt := ctx.Options.(*Options)
+	if idx > 0 {
+		return nil, coap.ErrEndOfArray
+	}
+	dist := make([]int, 5, 5)
+	ch := ctx.Inputs()[0].ChanAll(0, opt.numWorkers)
+	for {
+		v, ok := <-ch
+		if !ok {
+			return dist, nil
+		}
+		s := v.([]int)
 		for k, v := range s {
 			dist[k] += v
 		}
@@ -83,20 +105,27 @@ func createApp(dbName string, chunkSize int) {
 	defer db.Close()
 
 	opt := &Options{
-		db:        db,
-		chunkSize: chunkSize,
+		db:         db,
+		chunkSize:  chunkSize,
+		numWorkers: 2,
 	}
 
 	app := coap.NewApp(dbName)
 	dataChunk := app.AddSource(movieFunc, opt, nil)
-	log.Printf("DEBUG: datachunk:  %#v", dataChunk)
 	ratingDist := app.Add(ratingDistFunc, opt, dataChunk)
-	log.Printf("DEBUG: ratingDist:  %#v", ratingDist)
-	aggRatings := app.Add(aggRatingsFunc, opt, ratingDist)
-	log.Printf("DEBUG: aggratings:  %#v", aggRatings)
+	//aggRatings := app.Add(aggRatingsFunc, opt, ratingDist)
+	aggRatings := app.Add(concurrentRatingsFunc, opt, ratingDist)
 
+	start := time.Now()
 	v, e := aggRatings(0)
-	log.Printf(">>>>>>>> %#v %#v", v, e)
+	if e != nil {
+		log.Fatal(e)
+	}
+	end := time.Now()
+	d := end.Sub(start)
+
+	log.Printf("Ratings distribution {1..5}: %v", v)
+	log.Printf("duration: %v", d)
 
 	// var i uint64
 	// for {

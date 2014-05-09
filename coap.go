@@ -5,7 +5,12 @@ package coap
 
 import (
 	"errors"
-	"log"
+	"runtime"
+	"sync"
+)
+
+const (
+	GoMaxProcs = 2
 )
 
 var (
@@ -44,6 +49,7 @@ func NewApp(name string) *App {
 
 	app := &App{Name: name}
 	app.procs = make(map[int]*Context)
+	runtime.GOMAXPROCS(GoMaxProcs)
 	return app
 }
 
@@ -76,25 +82,13 @@ func (app *App) AddSource(fn ProcFunc, opt interface{}, inputs ...Processor) Pro
 	return ctx.proc
 }
 
-// Same as Add but inputs are sub-sampled.
-// For example if skip = 4 and key = 10, then the inputs are passed inKey = 4 * 10 = 40
-func (app *App) AddSkip(skip int, fn ProcFunc, opt interface{}, inputs ...Processor) Processor {
-
-	ctx := app.createContext(fn, opt, inputs...)
-	ctx.Skip = skip
-	ctx.proc = app.procInstance(ctx)
-	return ctx.proc
-}
-
 // Adds a ProcFunc to the app.
 // The instance may use opt to retrieve parameters and is wired
 // using the inputs.
 func (app *App) Add(fn ProcFunc, opt interface{}, inputs ...Processor) Processor {
 
-	log.Printf("DEBUG: input %+v", inputs[0])
 	ctx := app.createContext(fn, opt, inputs...)
 	ctx.proc = app.procInstance(ctx)
-	log.Printf("DEBUG: create context %+v", ctx)
 	return ctx.proc
 }
 
@@ -134,9 +128,6 @@ func (app *App) procInstance(ctx *Context) Processor {
 			return v, nil
 		}
 		result, err := ctx.procFunc(key, ctx)
-		log.Printf("\nDEBUG: key:%d, ctx:%+v", key, ctx)
-		log.Printf("DEBUG: in:%+v", ctx.inputs[0])
-		log.Printf("DEBUG: id:%d,  res:%v, err:%v", ctx.id, result, err)
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +140,6 @@ func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor)
 	id := len(app.procs)
 	ctx := &Context{
 		cache:    newCache(),
-		Skip:     1,
 		procFunc: fn,
 		Options:  opt,
 		inputs:   inputs,
@@ -159,15 +149,98 @@ func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor)
 	return ctx
 }
 
+func (p Processor) Slice(start, end uint64) (values []Value, err error) {
+
+	values = make([]Value, end-start)
+	for k, _ := range values {
+		values[k], err = p(uint64(k))
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+// source of indices for workers.
+type counter struct {
+	k uint64
+	sync.Mutex
+}
+
+// get next key synchronized.
+func (c *counter) key() uint64 {
+	c.Lock()
+	defer c.Unlock()
+	v := c.k
+	c.k++
+	return v
+}
+
+// do work for index
+func (c *counter) worker(p Processor, values chan Value) {
+
+	for {
+		k := c.key()
+		v, err := p(k)
+		if err != nil {
+			//log.Printf("worker exiting with err: %s", err)
+			values <- nil
+			return
+		}
+		values <- v
+	}
+}
+
+// coordinate workers.
+func master(p Processor, numWorkers int, out chan Value) {
+
+	values := make(chan Value)
+	cnt := counter{}
+	for i := 0; i < numWorkers; i++ {
+		go cnt.worker(p, values)
+	}
+
+	n := 0
+	for {
+		v := <-values
+		if v == nil {
+			n++ // increment when worker finishes.
+		} else {
+			out <- v
+		}
+		if n == numWorkers {
+			close(values)
+			close(out)
+			return
+		}
+	}
+}
+
+// ChanAll method divides the work among several workers to take advantage
+// of multicore CPUs.
+func (p Processor) ChanAll(start uint64, numWorkers int) chan Value {
+
+	out := make(chan Value, numWorkers)
+	go master(p, numWorkers, out)
+	return out
+}
+
 // A cache (ony for prototyping. a production cache should evict old values, etc)
 // TODO: Implement cache using a circular buffer.
 type cache struct {
 	m map[uint64]Value
+	sync.Mutex
 }
 
 func newCache() *cache { return &cache{m: make(map[uint64]Value)} }
 func (c *cache) Get(key uint64) (val Value, ok bool) {
+	c.Lock()
+	defer c.Unlock()
 	val, ok = c.m[key]
 	return
 }
-func (c *cache) Set(key uint64, val Value) { c.m[key] = val }
+func (c *cache) Set(key uint64, val Value) {
+	c.Lock()
+	defer c.Unlock()
+	c.m[key] = val
+}
