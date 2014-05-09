@@ -1,6 +1,9 @@
 // Copyright (c) 2014 AKUALAB INC., All rights reserved.
 
-// Example of a recommender system using matrix factorization.
+// Implement various collaborative filtering algorithms [1] and evaluate using the
+// movie lense data set [2]
+// [1] http://www.stanford.edu/~lmackey/papers/cf_slides-pml09.pdf
+// [2] http://grouplens.org/datasets/movielens/
 package main
 
 import "log"
