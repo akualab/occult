@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/akualab/coap/store"
+	"github.com/akualab/occult/store"
 )
 
 type Obs struct {

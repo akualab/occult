@@ -11,8 +11,8 @@ import (
 	"log"
 	"math"
 
-	"github.com/akualab/coap"
-	"github.com/akualab/coap/store"
+	"github.com/akualab/occult"
+	"github.com/akualab/occult/store"
 )
 
 type SqErr struct {
@@ -43,19 +43,19 @@ func EvalCF(dbTest string, cf *CF) {
 		sqErr:      &SqErr{},
 	}
 
-	app := coap.NewApp(dbTest)
+	app := occult.NewApp(dbTest)
 	evalProc := app.AddSource(evalFunc, opt, nil)
 
 	var i uint64
 	for {
 		v, e := evalProc(i)
-		if e != nil && e != coap.ErrEndOfArray {
+		if e != nil && e != occult.ErrEndOfArray {
 			log.Fatal(e)
 		}
 		if v != nil {
 			//log.Printf("chunk[%4d]: %v", i, v)
 		}
-		if e == coap.ErrEndOfArray {
+		if e == occult.ErrEndOfArray {
 			//log.Printf("end of array found at index %d", i)
 			break
 		}
@@ -70,12 +70,12 @@ func EvalCF(dbTest string, cf *CF) {
 	log.Printf("%20s: %.4f", "Simple MF", math.Sqrt(opt.sqErr.mf/n))
 }
 
-func evalFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
+func evalFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 	opt := ctx.Options.(*EvalOptions)
 	db := opt.db
 	v, err := db.Get(idx)
 	if err == store.ErrKeyNotFound {
-		return nil, coap.ErrEndOfArray
+		return nil, occult.ErrEndOfArray
 	}
 	obs := v.(Obs)
 	//log.Printf("U:%d, I:%d, R:%d, Mean%.2f", obs.User, obs.Item, obs.Rating, opt.globalMean)

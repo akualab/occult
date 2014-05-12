@@ -1,93 +1,125 @@
-# Cache-Oriented Array Processing (COAP)
+# Project Occult
 
-`Copyright (c) 2013 AKUALAB INC., All rights reserved.`
+Occult is an open-source, distributed, cache-oriented, array processing architecture for scientific computing.
 
-This is an experimental package to explore distributed aray processing architectures using the Go
-programming language.
+Quote from [Wikipedia](http://en.wikipedia.org/wiki/Occult): *From the scientific perspective, occultism is regarded as unscientific as it does not make use of the standard scientific method to obtain facts.*
 
-The inspiration came from various sources including the ideas behind SciDB, a distributed database
-designed for scientific computation using large data sets. I also wanted to improve the ideas that led to the design of S4, a distributed stream processing platofrm that we developed at Yahoo! This is still work in progress, suggestion are welcomed!
-
-The typical use case is to process time series data. For example, in a data center,
-metrics can be processed to detect failures, degradation in performance, or any anomalies.
-A surveilance application may store images that need to be analyzed using computer vision
-algorithms. However, any application that involves large data sets can potentially be
-implemented using COAP.
+That's what it feels like to do scientific computing on distributed systems that can take advantage of multi-core CPUs and clusters of unreliable computers.
 
 ## Design Goals
 
 * Simplicity of implementation, deployment, and use.
 * A programming model that hides the complexity of distributed systems.
-* Minimize network traffic and reads from slow data sources.
-* Cache data in memory to speed up processing. This applies to iterative algorithms and to cases where multiple applications access the same data concurrently.
-* Avoid centralized management to achieve unlimited scalability.
-* A single architecture for bacth and stream processing.
+* Minimize network traffic and read operations from slow data sources.
+* Cache data in memory to speed up processing. Dynamically route work to where the data is.
+* Avoid centralized management to achieve unlimited scalability and elasticity.
+* Unified platform for batch-, interative-, and stream-processing.
+* Fault-tolerant.
+
+This is an experimental package to explore distributed aray processing architectures using the Go
+programming language.
+
+The inspiration came from various sources including ideas behind [SciDB](http://scidb.org/), [Apache Spark](http://spark.apache.org/), S4 - [PDF](http://www.stanford.edu/class/cs347/reading/S4PaperV2.pdf), and many other open source projects.
+
+The typical use case is to process time series data. For example, in a data center,
+metrics can be processed to detect failures, degradation in performance, or any anomalies.
+A surveilance application may store images that need to be analyzed using computer vision
+algorithms. However, any application that involves large data sets can potentially be
+implemented using **Occult**.
 
 ## How It Works
 
-* Data is ingested by a distributed store. (Pushed into data store.)
-* A data source is organized as a temporal sequence of records with an integer key.
-* An app is an executable program deployed to all the nodes in a cluster.
-* An app has a network of interconnected processors.
-* Processor provide values for key on demand. (Value is pulled from processor.)
-* A processor gets input data from other processors.
-* The leaf of the tree are data sources (eg. the distributed key-value store.)
-* Processors cache intermediate results indexed by the key.
+* Data is ingested by a distributed store. (This is not part of the project.)
+* A data source is organized as a sequence of records with an integer, 64-bit key.
+* An app is an executable program deployed to all the nodes in the cluster.
+* An app is a graph of simple processing functions where a processor depends on the outputs of other processors.
+* Processors return a Value for a given key. (Pull architecture.)
+* The application graph may depend on slow data sources.
+* Processors cache intermediate results transparently by key.
 
 ## Example
 
-(see coap_test.go)
+source: [occult_test.go](https://github.com/akualab/occult/blob/master/occult_test.go)
 
-To run coap_test:
+To run occult_test:
 
 ```
 # If you need to install Go, see:
 # install: http://golang.org/doc/install
 # setup: http://golang.org/doc/code.html
-git clone https://github.com/akualab/coap
-cd coap
+git clone https://github.com/akualab/occult
+cd occult
 go test -v
 ```
 
-To run recommendation system examples/reco
+In this example,
+* `randomFunc` is the data source which provides an array of ints.
+* `windowFunc` is applied every N samples, returns a slice of ints of length winSize.
+* `sortFunc` sorts the slice of ints returned by the window.
+* `quantileFunc` returns a slice with the values of the quantiles (eg. n=2 returns one value, the median.)
 
-```
-# install leveldb, om macosx:
-brew install leveldb
-# run:
-cd examples/reco
-go run *.go
-```
-
-* Source randomFunc provides an array of ints
-* windowFunc is applied every N samples, returns a slice of ints of length winSize.
-* sortFunc Sort sorts the slice of ints returned by the window.
-* quantileFunc returns a slice with the values of the quantiles (eg. n=2 returns one value, the median.)
-
-Programming and wiring the functions is very easy. All the details are pretty much hidden. To get the quantiles for a index 33, simply run:
+The application is a collection of short processing functions. The processing details are hidden. To get a value, for example `quantiles` for key 33, simply run:
 
 `
 result, err := quantile(33)
 `
 
+See also the collaborative filtering example: [README.md](https://github.com/akualab/occult/blob/master/examples/reco/README.md)
+
 ## Under the Hood
 
-The initial prototype is implemented in coap.go and only runs on a single host. The goal is to discuss the design before getting to deep into implementation details.
+The core functionality is in a very small file [occult.go](https://github.com/akualab/occult/blob/master/occult.go).
 
-The implementation is only a few lines of code but appears to satisfy many of the requirements. Using the Go programming style, I chose to implement processors using functions. A processor is implemented usign the ProcFunc type. To add a processor to an app and wire its inputs, we use the methods:
+The approach is to provide a basic type called ProcFunc:
 
-* app.Add()
-* app.AddSource()
+```go
+type ProcFunc func(key uint64, ctx *Context) (Value, error)
+```
 
-These methods create the processor instance with specific parameters and inputs. AddSource hints the app that the processor instance is a persistent store whose access is slow.
+with only two arguments, the key and a context object. The wiring of the processors is handled by `Context` as follows:
 
-Perhaps the most important aspect of the design is that affinity is not required. We want affinity to optimize performance. This design makes it incredibly easy to add and remove nodes and to allocate tasks in the cluster. For example, a node failure results in degraded performance because active requests will time out and some new requests will hit the persistent store. Performance will normalize after the caches are filled up again. When a node is overloaded due to skewed requests, a load balancing algorithms can be used to use a different node.
+```go
+aProcessor := ctx.Inputs()[0] // get the first input which points to aProcesror.
+anotherProcessor := ctx.Inputs()[1] // get the second input and as many as required.
+```
+
+to get a value from the input:
+
+```go
+var uint64 key = 111 // some key
+in0, err := aProcessor(key) // Processors return errors.
+if err == occult.ErrEndOfArray {
+	break // when we don't know the length of teh array, we rely on errors.
+}
+s := in0.(MyType) // use type assertion to uncover the underlying type
+```
+
+the variable `s` has the value produced by `aProcessor` for `key` 111.
+
+Finally, to build an application, we add the ProcFunc functions to an app using `app.Add()` and `app.AddSource()`. The latter will set a flag to indicate that is a slow source. This information will be used to allocate work to nodes efficiently.
+
+## Using a Cluster
+
+### Not Implemented Yet
+The cluster functionality is not yet implemented but should be relatively simnple given the tools already available (Go [RPC](http://golang.org/pkg/net/rpc/) for interprocess communication and perhaps and, perhaps, [CoreOS etcd](https://github.com/coreos/etcd) to coordinate the cluster, and [levigo](https://github.com/jmhodges/levigo) which provides bindings for leveldb.
+
+### Finding Memory
+
+Performance is achieved by distributing work among the nodes in the cluster. However, any node can do any work. A parallel system will be responsible for maintaining *routing tables* that instruct the app where to get the work done for a given index. This information is built dynamically. For example, to get `someWork(333)`, the app will look up node for the (processor, key) pair. If the info does not exist, the node is chosen based on load or other criteria. However, the mapping between work and node is broadcasted to all the nodes in the cluster to update all the local routing tables.
+
+### Messaging
+
+Because all nodes can do any work, the system feels like a stateless machine, even though state is encoded in the processor graph as a derivative of the original data sources. In other words, messages can get lost and nodes can be added or removed from the cluster without causing failures, only temporary degradation in performance. The only requirement is to have the original data sources available.
 
 ## Next Steps
 
-As you see this is a big idea with a very simple implementation. Let me know what you think, does this makes sense? What use cases shoudl we target?
+* Get feedback on overall architecture and API.
+* Decide: does the world need this system? Written in Go?
+* Implement cluster functionality.
+* Use an LRU cache (leveldb? pure go?)
+* Find a task (sponsor?) to build an app for testing a very large data set.
 
-Thanks! Leo Neumeyer, April 2014.
+Thanks! Leo Neumeyer, May 12, 2014.
 * leo@akualab.com
 * @leoneu
 * https://www.linkedin.com/in/leoneu

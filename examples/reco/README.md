@@ -1,12 +1,12 @@
 # Example Collaborative filtering algorithms
 
-This examples implements various simple collaborative filtering algorithms. The purpose of the example is to show how to use COAP to implement algorithms.
+This examples implements various simple collaborative filtering algorithms. The purpose of the example is to show how to use Occult to implement algorithms.
 
 ## Install
 
 ```
 # -u will update existing package, -x shows what's going on.
-go get -u -x  github.com/akualab/coap/examples/reco
+go get -u -x  github.com/akualab/occult/examples/reco
 ```
 
 Install [leveldb](https://code.google.com/p/leveldb/) which is used to store the data set. I tested in MacOSX: `brew install leveldb`
@@ -14,7 +14,7 @@ Install [leveldb](https://code.google.com/p/leveldb/) which is used to store the
 Finally, run the example:
 
 ```
-cd GOPATH/src/github.com/akualab/coap/examples/reco/
+cd GOPATH/src/github.com/akualab/occult/examples/reco/
 go run *.go
 ```
 
@@ -30,7 +30,7 @@ This file has the entry point for the program `manin()` and calls the top level 
 
 ### train.go
 
-This file shows you how to use coap to implement the trainer.
+This file shows you how to use occult to implement the trainer.
 * Reads data from database as needed.
 * Comuptes various aggregations.
 * Trains a simple matrix factorization algorithms using gradient descent.

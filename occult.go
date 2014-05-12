@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Cache-Oriented Array Processing (COAP)
-package coap
+// Occult: A cache-oriented array processing platform.
+package occult
 
 import (
 	"errors"

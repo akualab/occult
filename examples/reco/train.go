@@ -13,8 +13,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/akualab/coap"
-	"github.com/akualab/coap/store"
+	"github.com/akualab/occult"
+	"github.com/akualab/occult/store"
 )
 
 type Options struct {
@@ -29,7 +29,7 @@ type Options struct {
 
 // gets data from DB
 // returns chunks of observations in a slice.
-func movieFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
+func movieFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 	opt := ctx.Options.(*Options)
 	db := opt.db
 	n := uint64(opt.chunkSize)
@@ -39,7 +39,7 @@ func movieFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
 	for ; i < n; i++ {
 		v, err := db.Get(base + i)
 		if err == store.ErrKeyNotFound {
-			return s, coap.ErrEndOfArray
+			return s, occult.ErrEndOfArray
 		}
 		s = append(s, v.(Obs))
 	}
@@ -47,14 +47,14 @@ func movieFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
 }
 
 // Computes various global statistics on the data set.
-func cfFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
+func cfFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 	opt := ctx.Options.(*Options)
 	in, err := ctx.Inputs()[0](idx)
-	if err != nil && err != coap.ErrEndOfArray {
+	if err != nil && err != occult.ErrEndOfArray {
 		return nil, err // something is wrong
 	}
 	if in == nil {
-		return nil, coap.ErrEndOfArray
+		return nil, occult.ErrEndOfArray
 	}
 	s := in.([]Obs)
 	cf := NewCF(opt.alpha)
@@ -69,10 +69,10 @@ func cfFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
 }
 
 // Aggregate CF.
-func aggCFFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
+func aggCFFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 	opt := ctx.Options.(*Options)
 	if idx > 0 {
-		return nil, coap.ErrEndOfArray
+		return nil, occult.ErrEndOfArray
 	}
 	cf := NewCF(opt.alpha)
 	ch := ctx.Inputs()[0].MapAll(0)
@@ -87,7 +87,7 @@ func aggCFFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
 }
 
 // Matrix factorization.
-func mfFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
+func mfFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 	opt := ctx.Options.(*Options)
 
 	// input 0 has chunks of data
@@ -106,7 +106,7 @@ func mfFunc(idx uint64, ctx *coap.Context) (coap.Value, error) {
 		log.Printf("GD iter: %d", iter)
 		for c = 0; ; c++ {
 			in0, err := chunks(c)
-			if err == coap.ErrEndOfArray {
+			if err == occult.ErrEndOfArray {
 				break
 			}
 			s := in0.([]Obs)
@@ -139,7 +139,7 @@ func TrainCF(dbName string, chunkSize int) *CF {
 		alpha:          1,
 	}
 
-	app := coap.NewApp(dbName)
+	app := occult.NewApp(dbName)
 	dataChunk := app.AddSource(movieFunc, opt, nil)
 	cfProc := app.Add(cfFunc, opt, dataChunk)
 	aggCFProc := app.Add(aggCFFunc, opt, cfProc)

@@ -3,10 +3,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package coap
+package occult
 
 import (
-	"log"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -106,8 +105,8 @@ func TestQuantiles(t *testing.T) {
 		i++
 	}
 
-	// test slice
-	values, err := sorted.Slice(100, 103)
+	// test Map
+	values, err := sorted.Map(100, 103)
 	FatalIf(t, err)
 	t.Logf("slice values: %#v", values)
 }
@@ -121,13 +120,13 @@ func TestChannels(t *testing.T) {
 	}
 	app := NewApp("test")
 	randomInts := app.AddSource(randomFunc, opt, nil)
-	ch := randomInts.ChanAll(0, 5)
+	ch := randomInts.MapAllN(0, 5)
 	for {
 		v, ok := <-ch
 		if !ok {
 			return
 		}
-		log.Printf("final got: %#v", v)
+		t.Logf("final got: %#v", v)
 	}
 }
 

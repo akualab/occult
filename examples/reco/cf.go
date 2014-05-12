@@ -184,9 +184,6 @@ func (s *CF) Update(u, i, r int) {
 	}
 	ru[r-1] += 1
 
-	//	s.AddUser(u)
-	//	s.AddItem(i)
-	//	s.AddMutex(u, i)
 }
 
 // Merges result into s, destroys q.
