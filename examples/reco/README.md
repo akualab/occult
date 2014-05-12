@@ -22,7 +22,7 @@ go run *.go
 
 ### reco.go
 
-This file has the entry point for the program `manin()` and calls the top level functions:
+This file has the entry point for the program `main()` and calls the top level functions:
 * Download data set (if first time).
 * Build the leveldb databases (for train and test).
 * Train model.
@@ -32,7 +32,7 @@ This file has the entry point for the program `manin()` and calls the top level 
 
 This file shows you how to use occult to implement the trainer.
 * Reads data from database as needed.
-* Comuptes various aggregations.
+* Computes various aggregations.
 * Trains a simple matrix factorization algorithms using gradient descent.
 * Returns the model in data struct CF.
 

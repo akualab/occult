@@ -13,10 +13,10 @@ That's what it feels like to do scientific computing on distributed systems!
 * Minimize network traffic and read operations from slow data sources.
 * Cache data in memory to speed up processing. Dynamically route work to where the data is.
 * Avoid centralized management to achieve unlimited scalability and elasticity.
-* Unified platform for batch-, interative-, and stream-processing.
+* Unified platform for batch-, interactive-, and stream-processing.
 * Fault-tolerant.
 
-This is an experimental package to explore distributed aray processing architectures using the Go
+This is an experimental package to explore distributed array processing architectures using the Go
 programming language.
 
 The inspiration came from various sources including ideas behind [SciDB](http://scidb.org/), [Apache Spark](http://spark.apache.org/), S4 ([PDF](http://www.stanford.edu/class/cs347/reading/S4PaperV2.pdf)), and many other open source projects.
@@ -27,7 +27,7 @@ The inspiration came from various sources including ideas behind [SciDB](http://
 * Detect anomalies in a data center using streams of measurements.
 * Analyze sensor data in Internet of Things (IoT) applications.
 * Detect intruders in a network.
-* Set alarms in a surveilance system that analyzes video using computer vision algorithms.
+* Set alarms in a surveillance system that analyzes video using computer vision algorithms.
 * Train a model to predict clicks on a web page.
 
 ## How It Works
@@ -103,7 +103,7 @@ Finally, to build an application and get Processor instances, we add the ProcFun
 
 Note that a ProcFunc can be used to create more than one processor. The Processor instances will have the same functionality but may use different inputs adn parameters. ProcFunc can be written to be highly reusable or highly customized for the application (one-time use).
 
-As always, with Go, we decide to reuse or rewrite using a pargamatic approach. Writing custom code can be much faster and cleaner than writing reusable code. Fewer levels of indirection makes code simpler and easier to understand.
+As always, with Go, we decide to reuse or rewrite using a pragmatic approach. Writing custom code can be much faster and cleaner than writing reusable code. Fewer levels of indirection makes code simpler and easier to understand.
 
 ## Using a Cluster
 
