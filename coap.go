@@ -1,4 +1,7 @@
 // Copyright (c) 2014 AKUALAB INC., All rights reserved.
+//
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 // Cache-Oriented Array Processing (COAP)
 package coap
@@ -149,7 +152,9 @@ func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor)
 	return ctx
 }
 
-func (p Processor) Slice(start, end uint64) (values []Value, err error) {
+// Map applies the processor to the key range {start..end}.
+// Returns a slice of Values of length (end-start).
+func (p Processor) Map(start, end uint64) (values []Value, err error) {
 
 	values = make([]Value, end-start)
 	for k, _ := range values {
@@ -161,13 +166,29 @@ func (p Processor) Slice(start, end uint64) (values []Value, err error) {
 	return
 }
 
-// source of indices for workers.
+// MapAllN applies the processor to the key range {start..}.
+// Divides the work among N workers to take advantage
+// of multicore CPUs.
+func (p Processor) MapAllN(start uint64, numWorkers int) chan Value {
+
+	out := make(chan Value, numWorkers)
+	go master(p, numWorkers, out)
+	return out
+}
+
+// Same as MapAllN but gets the number of workers using
+// runtime.NumCPU().
+func (p Processor) MapAll(start uint64) chan Value {
+	return p.MapAllN(start, runtime.NumCPU())
+}
+
+// Provides keys to workers.
 type counter struct {
 	k uint64
 	sync.Mutex
 }
 
-// get next key synchronized.
+// Safely returns the next key to workers.
 func (c *counter) key() uint64 {
 	c.Lock()
 	defer c.Unlock()
@@ -176,7 +197,7 @@ func (c *counter) key() uint64 {
 	return v
 }
 
-// do work for index
+// Worker does work for key obtained (safely) from counter.
 func (c *counter) worker(p Processor, values chan Value) {
 
 	for {
@@ -191,7 +212,7 @@ func (c *counter) worker(p Processor, values chan Value) {
 	}
 }
 
-// coordinate workers.
+// Coordinate workers.
 func master(p Processor, numWorkers int, out chan Value) {
 
 	values := make(chan Value)
@@ -200,6 +221,7 @@ func master(p Processor, numWorkers int, out chan Value) {
 		go cnt.worker(p, values)
 	}
 
+	// TODO: add timeout
 	n := 0
 	for {
 		v := <-values
@@ -214,15 +236,6 @@ func master(p Processor, numWorkers int, out chan Value) {
 			return
 		}
 	}
-}
-
-// ChanAll method divides the work among several workers to take advantage
-// of multicore CPUs.
-func (p Processor) ChanAll(start uint64, numWorkers int) chan Value {
-
-	out := make(chan Value, numWorkers)
-	go master(p, numWorkers, out)
-	return out
 }
 
 // A cache (ony for prototyping. a production cache should evict old values, etc)
