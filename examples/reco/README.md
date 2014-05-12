@@ -1,4 +1,4 @@
-# Example Collaborative filtering algorithms
+# Example: Predict Movie Ratings using Collaborative Filtering
 
 This examples implements various simple collaborative filtering algorithms. The purpose of the example is to show how to use Occult to implement algorithms.
 

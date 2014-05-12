@@ -4,7 +4,7 @@ Occult is an open-source, distributed, cache-oriented, array processing architec
 
 Quote from [Wikipedia](http://en.wikipedia.org/wiki/Occult): *From the scientific perspective, occultism is regarded as unscientific as it does not make use of the standard scientific method to obtain facts.*
 
-That's what it feels like to do scientific computing on distributed systems that can take advantage of multi-core CPUs and clusters of unreliable computers.
+That's what it feels like to do scientific computing on distributed systems!
 
 ## Design Goals
 
@@ -19,17 +19,20 @@ That's what it feels like to do scientific computing on distributed systems that
 This is an experimental package to explore distributed aray processing architectures using the Go
 programming language.
 
-The inspiration came from various sources including ideas behind [SciDB](http://scidb.org/), [Apache Spark](http://spark.apache.org/), S4 - [PDF](http://www.stanford.edu/class/cs347/reading/S4PaperV2.pdf), and many other open source projects.
+The inspiration came from various sources including ideas behind [SciDB](http://scidb.org/), [Apache Spark](http://spark.apache.org/), S4 ([PDF](http://www.stanford.edu/class/cs347/reading/S4PaperV2.pdf)), and many other open source projects.
 
-The typical use case is to process time series data. For example, in a data center,
-metrics can be processed to detect failures, degradation in performance, or any anomalies.
-A surveilance application may store images that need to be analyzed using computer vision
-algorithms. However, any application that involves large data sets can potentially be
-implemented using **Occult**.
+## Use Cases
+
+* Process time series data.
+* Detect anomalies in a data center using streams of measurements.
+* Analyze sensor data in Internet of Things (IoT) applications.
+* Detect intruders in a network.
+* Set alarms in a surveilance system that analyzes video using computer vision algorithms.
+* Train a model to predict clicks on a web page.
 
 ## How It Works
 
-* Data is ingested by a distributed store. (This is not part of the project.)
+* Data is ingested by a distributed store. (Not part of the project.)
 * A data source is organized as a sequence of records with an integer, 64-bit key.
 * An app is an executable program deployed to all the nodes in the cluster.
 * An app is a graph of simple processing functions where a processor depends on the outputs of other processors.
@@ -68,7 +71,7 @@ See also the collaborative filtering example: [README.md](https://github.com/aku
 
 ## Under the Hood
 
-The core functionality is in a very small file [occult.go](https://github.com/akualab/occult/blob/master/occult.go).
+The core functionality is in [occult.go](https://github.com/akualab/occult/blob/master/occult.go).
 
 The approach is to provide a basic type called ProcFunc:
 
@@ -96,12 +99,16 @@ s := in0.(MyType) // use type assertion to uncover the underlying type
 
 the variable `s` has the value produced by `aProcessor` for `key` 111.
 
-Finally, to build an application, we add the ProcFunc functions to an app using `app.Add()` and `app.AddSource()`. The latter will set a flag to indicate that is a slow source. This information will be used to allocate work to nodes efficiently.
+Finally, to build an application and get Processor instances, we add the ProcFunc functions to an app using `app.Add()` and `app.AddSource()`. The latter will set a flag to indicate that is a slow source. This information will be used to allocate work to nodes efficiently.
+
+Note that a ProcFunc can be used to create more than one processor. The Processor instances will have the same functionality but may use different inputs adn parameters. ProcFunc can be written to be highly reusable or highly customized for the application (one-time use).
+
+As always, with Go, we decide to reuse or rewrite using a pargamatic approach. Writing custom code can be much faster and cleaner than writing reusable code. Fewer levels of indirection makes code simpler and easier to understand.
 
 ## Using a Cluster
 
 ### Not Implemented Yet
-The cluster functionality is not yet implemented but should be relatively simnple given the tools already available (Go [RPC](http://golang.org/pkg/net/rpc/) for interprocess communication and perhaps and, perhaps, [CoreOS etcd](https://github.com/coreos/etcd) to coordinate the cluster, and [levigo](https://github.com/jmhodges/levigo) which provides bindings for leveldb.
+The cluster functionality is not yet implemented but should be relatively simple given the tools already available (Go [RPC](http://golang.org/pkg/net/rpc/) for interprocess communication and, perhaps, [CoreOS etcd](https://github.com/coreos/etcd) to coordinate the cluster, and [levigo](https://github.com/jmhodges/levigo) which provides bindings for leveldb.
 
 ### Finding Memory
 
@@ -117,7 +124,7 @@ Because all nodes can do any work, the system feels like a stateless machine, ev
 * Decide: does the world need this system? Written in Go?
 * Implement cluster functionality.
 * Use an LRU cache (leveldb? pure go?)
-* Find a task (sponsor?) to build an app for testing a very large data set.
+* Find a task (sponsor?) to build an app for testing using a very large data set. (suggestions?)
 
 Thanks! Leo Neumeyer, May 12, 2014.
 * leo@akualab.com
