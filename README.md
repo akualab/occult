@@ -1,6 +1,6 @@
 # Project Occult
 
-Occult is an open-source, distributed, cache-oriented, array processing architecture for scientific computing.
+**Occult is an open-source, distributed, cache-oriented, array processing architecture for scientific computing.**
 
 Quote from [Wikipedia](http://en.wikipedia.org/wiki/Occult): *From the scientific perspective, occultism is regarded as unscientific as it does not make use of the standard scientific method to obtain facts.*
 
@@ -50,8 +50,8 @@ To run occult_test:
 # If you need to install Go, see:
 # install: http://golang.org/doc/install
 # setup: http://golang.org/doc/code.html
-git clone https://github.com/akualab/occult
-cd occult
+go get -u github.com/akualab/occult
+cd GOPATH/src/github.com/akualab/occult
 go test -v
 ```
 
