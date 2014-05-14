@@ -63,6 +63,19 @@ No           2             NA             1.85 s
 Yes          2             2              1.20 s (35% speedup)
 ```
 
+Test train times using LRU cache. As you can see, without the cache, the processing would be about two orders of magnitude slower. (Not a fair comparison, though, global values are computed in a first pass readin all the data, with no cache the program needs to re-compute global values every time they are needed.) The advantage, however, is that adding more cache saves you from having to optimize manually.
+
+```
+Notes:
+- leveldb cache disabled to simulate slow data access.
+- cache size is based on num elements (not memory usage)
+
+Chunk Size   Cache Cap     Time
+200          c <= 300      ~5 minutes
+200          c >=400       ~7 seconds
+100          400           ~5 minutes
+```
+
 ## References
 
 * Algorithms articles:
