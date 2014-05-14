@@ -13,7 +13,7 @@ That's what it feels like to do scientific computing on distributed systems!
 * Minimize network traffic and read operations from slow data sources.
 * Cache data in memory to speed up processing. Dynamically route work to where the data is.
 * Avoid centralized management to achieve unlimited scalability and elasticity.
-* Unified platform for batch-, interactive-, and stream-processing.
+* Unified platform for batch-, iterative-, and stream-processing.
 * Fault-tolerant.
 
 This is an experimental package to explore distributed array processing architectures using the Go

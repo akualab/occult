@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	GoMaxProcs = 2
+	GoMaxProcs      = 2
+	DefaultCacheCap = 1000
 )
 
 var (
@@ -42,18 +43,24 @@ func (ctx *Context) Inputs() []Processor {
 
 // An App coordinates the execution of a set of processors.
 type App struct {
-	Name   string
-	procs  map[int]*Context
-	nodeID int
+	Name     string
+	CacheCap uint64
+	procs    map[int]*Context
+	nodeID   int
 }
 
 // Creates a new App.
 func NewApp(name string) *App {
 
-	app := &App{Name: name}
+	app := &App{Name: name, CacheCap: DefaultCacheCap}
 	app.procs = make(map[int]*Context)
 	runtime.GOMAXPROCS(GoMaxProcs)
 	return app
+}
+
+// Sets cache capacity.
+func (app *App) SetCacheCap(c uint64) {
+	app.CacheCap = c
 }
 
 // Initializes app.
@@ -126,7 +133,7 @@ func (app *App) procInstance(ctx *Context) Processor {
 		// Do local computation.
 
 		// Check if the data is in the cache.
-		if v, ok := ctx.cache.Get(key); ok {
+		if v, ok := ctx.cache.get(key); ok {
 			//fmt.Printf("DEBUG: CACHE HIT in proc %d\n", ctx.id)
 			return v, nil
 		}
@@ -134,7 +141,7 @@ func (app *App) procInstance(ctx *Context) Processor {
 		if err != nil {
 			return nil, err
 		}
-		ctx.cache.Set(key, result)
+		ctx.cache.set(key, result)
 		return result, nil
 	}
 }
@@ -142,7 +149,7 @@ func (app *App) procInstance(ctx *Context) Processor {
 func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor) *Context {
 	id := len(app.procs)
 	ctx := &Context{
-		cache:    newCache(),
+		cache:    newCache(app.CacheCap),
 		procFunc: fn,
 		Options:  opt,
 		inputs:   inputs,
@@ -240,20 +247,20 @@ func master(p Processor, numWorkers int, out chan Value) {
 
 // A cache (ony for prototyping. a production cache should evict old values, etc)
 // TODO: Implement cache using a circular buffer.
-type cache struct {
-	m map[uint64]Value
-	sync.Mutex
-}
+// type cache struct {
+// 	m map[uint64]Value
+// 	sync.Mutex
+// }
 
-func newCache() *cache { return &cache{m: make(map[uint64]Value)} }
-func (c *cache) Get(key uint64) (val Value, ok bool) {
-	c.Lock()
-	defer c.Unlock()
-	val, ok = c.m[key]
-	return
-}
-func (c *cache) Set(key uint64, val Value) {
-	c.Lock()
-	defer c.Unlock()
-	c.m[key] = val
-}
+// func newCache() *cache { return &cache{m: make(map[uint64]Value)} }
+// func (c *cache) Get(key uint64) (val Value, ok bool) {
+// 	c.Lock()
+// 	defer c.Unlock()
+// 	val, ok = c.m[key]
+// 	return
+// }
+// func (c *cache) Set(key uint64, val Value) {
+// 	c.Lock()
+// 	defer c.Unlock()
+// 	c.m[key] = val
+// }

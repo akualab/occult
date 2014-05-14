@@ -140,6 +140,7 @@ func TrainCF(dbName string, chunkSize int) *CF {
 	}
 
 	app := occult.NewApp(dbName)
+	app.CacheCap = 400
 	dataChunk := app.AddSource(movieFunc, opt, nil)
 	cfProc := app.Add(cfFunc, opt, dataChunk)
 	aggCFProc := app.Add(aggCFFunc, opt, cfProc)

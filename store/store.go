@@ -30,7 +30,7 @@ type Store struct {
 func NewStore(fn string) (*Store, error) {
 
 	opts := levigo.NewOptions()
-	opts.SetCache(levigo.NewLRUCache(3 << 30))
+	//opts.SetCache(levigo.NewLRUCache(3 << 30))
 	opts.SetCreateIfMissing(true)
 
 	db, err := levigo.Open(fn, opts)
