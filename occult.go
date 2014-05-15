@@ -82,6 +82,10 @@ func (app *App) Init() {
 	// TODO: set nodeID. (Each cluster node must have a unique ID.)
 }
 
+func (app *App) Context(id int) *Context {
+	return app.procs[id]
+}
+
 // The value returned by Processors.
 type Value interface{}
 
