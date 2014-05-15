@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	GoMaxProcs      = 2
-	DefaultCacheCap = 1000
+	GoMaxProcs       = 2
+	DefaultCacheCap  = 1000
+	DefaultRPAddress = ":131313"
 )
 
 var (
@@ -46,11 +47,12 @@ func (ctx *Context) Inputs() []Processor {
 
 // An App coordinates the execution of a set of processors.
 type App struct {
-	Name     string
-	CacheCap uint64
-	procs    map[int]*Context
-	node     *node
-	router   router
+	Name        string
+	CacheCap    uint64
+	procs       map[int]*Context
+	node        *node
+	remoteNodes map[int]*node
+	router      router
 }
 
 // Creates a new App.

@@ -1,7 +1,10 @@
 package occult
 
+import "net/rpc"
+
 type node struct {
-	nid int
+	nid      int
+	rpClient *rpc.Client
 }
 
 func (n *node) id() int {
