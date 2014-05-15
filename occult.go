@@ -25,10 +25,13 @@ var (
 type ProcFunc func(key uint64, ctx *Context) (Value, error)
 
 // The context provides internal information for processor instances.
-// The Options field can be used to pass parameters to processors.
+// Each processor instance has a context.
 type Context struct {
-	Options  interface{}
-	Skip     int
+	// The Options field is made available to apps to pass parameters
+	// to proc instances in any way they want.
+	Options interface{}
+	// Uniquely identifies a processor instance in a node.
+	// A proc instance has the same id in all cluster nodes.
 	id       int
 	cache    *cache
 	procFunc ProcFunc
@@ -46,14 +49,21 @@ type App struct {
 	Name     string
 	CacheCap uint64
 	procs    map[int]*Context
-	nodeID   int
+	node     *node
+	router   router
 }
 
 // Creates a new App.
 func NewApp(name string) *App {
 
-	app := &App{Name: name, CacheCap: DefaultCacheCap}
-	app.procs = make(map[int]*Context)
+	app := &App{
+		Name:     name,
+		CacheCap: DefaultCacheCap,
+		procs:    make(map[int]*Context),
+		node:     &node{nid: 0},
+		router:   &simpleRouter{},
+	}
+
 	runtime.GOMAXPROCS(GoMaxProcs)
 	return app
 }
@@ -102,14 +112,8 @@ func (app *App) Add(fn ProcFunc, opt interface{}, inputs ...Processor) Processor
 	return ctx.proc
 }
 
-// Returns the target node ID for key in context.
-// TODO: not implemented.
-func (app *App) targetNode(key uint64, ctx *Context) int {
-	return 0
-}
-
 // Returns the result of a remote execution.
-func (app *App) remote(key uint64, processID int) (Value, error) {
+func (app *App) remote(key uint64, procID int) (Value, error) {
 	return nil, nil
 }
 
@@ -125,7 +129,7 @@ func (app *App) procInstance(ctx *Context) Processor {
 		// of requests. Perhaps, we can use a default batch size so when we request
 		// work for key we also do the slice up to key+batchSize. If the this is the
 		// target node, continue work here.
-		if app.targetNode(key, ctx) != app.nodeID { // this is a placeholder!
+		if app.router.route(key, ctx.id).id() != app.node.id() {
 			val, err := app.remote(key, ctx.id)
 			return val, err
 		}
@@ -149,6 +153,7 @@ func (app *App) procInstance(ctx *Context) Processor {
 func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor) *Context {
 	id := len(app.procs)
 	ctx := &Context{
+		// TODO: consider implement cache using a circular buffer. For now using LRU.
 		cache:    newCache(app.CacheCap),
 		procFunc: fn,
 		Options:  opt,
@@ -244,23 +249,3 @@ func master(p Processor, numWorkers int, out chan Value) {
 		}
 	}
 }
-
-// A cache (ony for prototyping. a production cache should evict old values, etc)
-// TODO: Implement cache using a circular buffer.
-// type cache struct {
-// 	m map[uint64]Value
-// 	sync.Mutex
-// }
-
-// func newCache() *cache { return &cache{m: make(map[uint64]Value)} }
-// func (c *cache) Get(key uint64) (val Value, ok bool) {
-// 	c.Lock()
-// 	defer c.Unlock()
-// 	val, ok = c.m[key]
-// 	return
-// }
-// func (c *cache) Set(key uint64, val Value) {
-// 	c.Lock()
-// 	defer c.Unlock()
-// 	c.m[key] = val
-// }

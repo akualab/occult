@@ -101,14 +101,16 @@ func TestQuantiles(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		t.Logf("quantile[%3d]: %v", i, v)
+		_ = v
+		//t.Logf("quantile[%3d]: %v", i, v)
 		i++
 	}
 
 	// test Map
 	values, err := sorted.Map(100, 103)
 	FatalIf(t, err)
-	t.Logf("slice values: %#v", values)
+	_ = values
+	//t.Logf("slice values: %#v", values)
 }
 
 func TestChannels(t *testing.T) {
@@ -126,7 +128,8 @@ func TestChannels(t *testing.T) {
 		if !ok {
 			return
 		}
-		t.Logf("final got: %#v", v)
+		_ = v
+		//t.Logf("final got: %#v", v)
 	}
 }
 

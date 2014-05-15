@@ -72,7 +72,7 @@ Notes:
 
 Chunk Size   Cache Cap     Time
 200          c <= 300      ~5 minutes
-200          c >=400       ~7 seconds
+200          c >= 400      ~7 seconds
 100          400           ~5 minutes
 ```
 
