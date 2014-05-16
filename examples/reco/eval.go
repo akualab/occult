@@ -31,7 +31,7 @@ type EvalOptions struct {
 	alpha      float64
 }
 
-func EvalCF(dbTest string, cf *CF) {
+func EvalCF(dbTest string, config *occult.Config, cf *CF) {
 	db, err := store.NewStore(dbTest)
 	fatalIf(err)
 	defer db.Close()
@@ -43,7 +43,7 @@ func EvalCF(dbTest string, cf *CF) {
 		sqErr:      &SqErr{},
 	}
 
-	app := occult.NewApp(dbTest)
+	app := occult.NewApp(config)
 	evalProc := app.AddSource(evalFunc, opt, nil)
 
 	var i uint64

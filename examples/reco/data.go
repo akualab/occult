@@ -25,7 +25,7 @@ type Obs struct {
 }
 
 // Write data to store
-func writeData(fn string) (dbTrain, dbTest string) {
+func writeData(fn string, nodeID int) (dbTrain, dbTest string) {
 
 	gob.Register(Obs{})
 
@@ -41,17 +41,17 @@ func writeData(fn string) (dbTrain, dbTest string) {
 		fn := path.Base(f.Name)
 		if fn == TrainFile {
 			log.Printf("Found %s\n", f.Name)
-			dbTrain = writeStore(f)
+			dbTrain = writeStore(f, nodeID)
 		}
 		if fn == TestFile {
 			log.Printf("Found %s\n", f.Name)
-			dbTest = writeStore(f)
+			dbTest = writeStore(f, nodeID)
 		}
 	}
 	return
 }
 
-func writeStore(f *zip.File) (dbName string) {
+func writeStore(f *zip.File, nodeID int) (dbName string) {
 
 	rc, e := f.Open()
 	if e != nil {
@@ -71,7 +71,7 @@ func writeStore(f *zip.File) (dbName string) {
 	scanner.Split(split)
 
 	// create store
-	name := path.Base(f.Name)
+	name := path.Base(f.Name) + "-" + strconv.Itoa(nodeID)
 	dbName = path.Join(OutDir, name)
 
 	// Return if db exists.

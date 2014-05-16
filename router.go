@@ -3,22 +3,22 @@ package occult
 // A router identifies which remote node can do the
 // requested work efficiently for a given processor
 // instance and range of keys.
-type router interface {
+type Router interface {
 	// Target node for processor instance and key.
-	route(key uint64, procID int) *node
+	Route(key uint64, procID int) *Node
 	// Target node for processor slice.
-	routeSlice(start, end uint64, procID int) *node
+	RouteSlice(start, end uint64, procID int) *Node
 }
 
 // A router implementation that always route to the same node.
 type simpleRouter struct{}
 
-func (r *simpleRouter) route(key uint64, procID int) *node {
-	return &node{nid: 0}
+func (r *simpleRouter) Route(key uint64, procID int) *Node {
+	return &Node{ID: 0}
 }
 
-func (r *simpleRouter) routeSlice(start, end uint64, procID int) *node {
-	return &node{nid: 0}
+func (r *simpleRouter) RouteSlice(start, end uint64, procID int) *Node {
+	return &Node{ID: 0}
 }
 
 // A router implementation that assigns nodes based on key ranges.
@@ -26,13 +26,14 @@ func (r *simpleRouter) routeSlice(start, end uint64, procID int) *node {
 type blockRouter struct {
 	numNodes  int
 	blockSize uint64
+	cluster   *Cluster
 }
 
-func (r *blockRouter) route(key uint64, procID int) *node {
+func (r *blockRouter) Route(key uint64, procID int) *Node {
 	block := int(key / r.blockSize)
-	return &node{nid: block % r.numNodes}
+	return r.cluster.Node(block % r.numNodes)
 }
 
-func (r *blockRouter) routeSlice(start, end uint64, procID int) *node {
-	return r.route(start, procID)
+func (r *blockRouter) RouteSlice(start, end uint64, procID int) *Node {
+	return r.Route(start, procID)
 }

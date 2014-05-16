@@ -1,0 +1,10 @@
+app:
+  name: "cf"
+  cache_cap: 1000
+cluster:
+  name: "local"
+  nodes:
+    - id: 0
+      addr: ":3000"
+    - id: 1
+      addr: ":3001"

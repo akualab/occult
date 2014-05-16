@@ -8,14 +8,17 @@ package occult
 
 import (
 	"errors"
+	"log"
 	"runtime"
 	"sync"
+	"time"
 )
 
 const (
 	GoMaxProcs       = 2
 	DefaultCacheCap  = 1000
 	DefaultRPAddress = ":131313"
+	NumRetries       = 20
 )
 
 var (
@@ -47,41 +50,89 @@ func (ctx *Context) Inputs() []Processor {
 
 // An App coordinates the execution of a set of processors.
 type App struct {
-	Name        string
-	CacheCap    uint64
-	procs       map[int]*Context
-	node        *node
-	remoteNodes map[int]*node
-	router      router
+	Name     string `yaml:"name"`
+	CacheCap uint64 `yaml:"cache_cap"`
+	procs    map[int]*Context
+	// The node on which this app is running.
+	cluster   *Cluster
+	router    Router
+	isServer  bool
+	ready     bool
+	terminate chan bool
 }
 
 // Creates a new App.
-func NewApp(name string) *App {
-
-	app := &App{
-		Name:     name,
-		CacheCap: DefaultCacheCap,
-		procs:    make(map[int]*Context),
-		node:     &node{nid: 0},
-		router:   &simpleRouter{},
+func NewApp(config *Config) *App {
+	app := config.App
+	app.procs = make(map[int]*Context)
+	app.cluster = config.Cluster
+	app.router = &blockRouter{
+		numNodes:  len(config.Cluster.Nodes),
+		blockSize: 200,
+		cluster:   app.cluster,
 	}
-
+	app.terminate = make(chan bool)
 	runtime.GOMAXPROCS(GoMaxProcs)
 	return app
 }
 
-// Sets cache capacity.
-func (app *App) SetCacheCap(c uint64) {
-	app.CacheCap = c
+func (app *App) SetServer(b bool) {
+	app.isServer = b
 }
 
-// Initializes app.
-// Must be called after adding processors and before execution.
-func (app *App) Init() {
-	// TODO: build graph of processors. We will use it to optimize
-	// the cluster and route requests to nodes.
+// Run app.
+// Must be called after adding processors.
+func (app *App) Run() {
 
-	// TODO: set nodeID. (Each cluster node must have a unique ID.)
+	if app.cluster == nil {
+		return // one node
+	}
+
+	// Start local server.
+	addr := app.cluster.LocalNode().Addr
+	go app.rpServe(addr)
+	log.Printf("server started on address %s", addr)
+
+	// Init clients to connect to remote nodes.
+	var err error
+	for _, node := range app.cluster.Nodes {
+		if node.ID != app.cluster.NodeID {
+			for j := 0; ; j++ {
+				if j > NumRetries {
+					log.Fatalf("too many retries, can't connect to server addr [%s]", node.Addr)
+				}
+				log.Printf("trying to connect to address %s", node.Addr)
+				node.rpClient, err = rpClient(node.Addr)
+				if err == nil {
+					break
+				}
+				time.Sleep(5 * time.Second)
+			}
+			log.Printf("success! conneted to address %s", node.Addr)
+		}
+	}
+
+	// This node is ready to start working. Need this to make sure we block requests
+	// from other nodes before the connections are initialized.
+	app.ready = true
+
+	// Wait for all remote nodes to be ready.
+	for _, node := range app.cluster.Nodes {
+		if node.ID != app.cluster.NodeID {
+			log.Printf("waiting for server %s to be ready", node.Addr)
+			ch := make(chan bool)
+			rpIsReady(node, ch)
+			<-ch
+			log.Printf("server %s is ready!", node.Addr)
+		}
+	}
+
+	log.Printf("all remote nodes are ready")
+
+	// Server mode is done here.
+	if app.isServer {
+		<-app.terminate
+	}
 }
 
 func (app *App) Context(id int) *Context {
@@ -118,11 +169,6 @@ func (app *App) Add(fn ProcFunc, opt interface{}, inputs ...Processor) Processor
 	return ctx.proc
 }
 
-// Returns the result of a remote execution.
-func (app *App) remote(key uint64, procID int) (Value, error) {
-	return nil, nil
-}
-
 // Closure to generate a Processor with parameter id and cache.
 func (app *App) procInstance(ctx *Context) Processor {
 
@@ -135,11 +181,22 @@ func (app *App) procInstance(ctx *Context) Processor {
 		// of requests. Perhaps, we can use a default batch size so when we request
 		// work for key we also do the slice up to key+batchSize. If the this is the
 		// target node, continue work here.
-		if app.router.route(key, ctx.id).id() != app.node.id() {
-			val, err := app.remote(key, ctx.id)
-			return val, err
-		}
 
+		// If there is a cluster send work to other nodes.
+		if app.cluster != nil {
+			// Let router do the magic, tell us where to send the work.
+			targetNode := app.router.Route(key, ctx.id)
+			//log.Printf("DEBUG target node  %#v", targetNode)
+			// Skip remote call if we stay on this node.
+			if targetNode.ID != app.cluster.NodeID {
+				//log.Printf("DEBUG before calling node %d", targetNode.ID)
+				// Finally, do synchronous remote call and return.
+				log.Printf("DEBUG request remote value key:%d, id:%d, target:%#v", key, ctx.id, targetNode)
+				val, err := app.rpCall(key, ctx.id, targetNode)
+				log.Printf("DEBUG got remote value key:%d, id:%d, err:%v, val:%#v", key, ctx.id, err, val)
+				return val, err
+			}
+		}
 		// Do local computation.
 
 		// Check if the data is in the cache.
@@ -151,6 +208,7 @@ func (app *App) procInstance(ctx *Context) Processor {
 		if err != nil {
 			return nil, err
 		}
+		log.Printf("DEBUG got local value key:%d, id:%d, val:%v", key, ctx.id, &result)
 		ctx.cache.set(key, result)
 		return result, nil
 	}
@@ -220,9 +278,11 @@ func (c *counter) worker(p Processor, values chan Value) {
 
 	for {
 		k := c.key()
+		log.Printf("DEBUG worker working on key: %d", k)
 		v, err := p(k)
+		log.Printf("DEBUG worker working on key %d result: %v", k, &v)
 		if err != nil {
-			//log.Printf("worker exiting with err: %s", err)
+			log.Printf("DEBUG worker exiting with err: %s", err)
 			values <- nil
 			return
 		}
@@ -243,12 +303,16 @@ func master(p Processor, numWorkers int, out chan Value) {
 	n := 0
 	for {
 		v := <-values
+		log.Printf("DEBUG master got result: %v", &v)
 		if v == nil {
 			n++ // increment when worker finishes.
+			log.Printf("DEBUG master got nil, n:%d", n)
 		} else {
+			log.Printf("DEBUG master send out")
 			out <- v
 		}
 		if n == numWorkers {
+			log.Printf("DEBUG master closing")
 			close(values)
 			close(out)
 			return

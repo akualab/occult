@@ -119,7 +119,7 @@ func mfFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 }
 
 // the app
-func TrainCF(dbName string, chunkSize int) *CF {
+func TrainCF(dbName string, config *occult.Config, chunkSize int) *CF {
 
 	var db *store.Store
 	var err error
@@ -139,13 +139,16 @@ func TrainCF(dbName string, chunkSize int) *CF {
 		alpha:          1,
 	}
 
-	app := occult.NewApp(dbName)
+	app := occult.NewApp(config)
 	app.CacheCap = 400
 	dataChunk := app.AddSource(movieFunc, opt, nil)
 	cfProc := app.Add(cfFunc, opt, dataChunk)
 	aggCFProc := app.Add(aggCFFunc, opt, cfProc)
 
 	mfProc := app.Add(mfFunc, opt, dataChunk, aggCFProc)
+
+	// If server, stay here forever, otherwise keep going.
+	app.Run()
 
 	log.Printf("num logical CPUs: %d", runtime.NumCPU())
 	start := time.Now()

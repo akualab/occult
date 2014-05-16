@@ -6,7 +6,9 @@
 package occult
 
 import (
+	"io/ioutil"
 	"math/rand"
+	"os"
 	"reflect"
 	"sort"
 	"testing"
@@ -86,7 +88,8 @@ func TestQuantiles(t *testing.T) {
 		step:     30,
 	}
 
-	app := NewApp("test")
+	config := &Config{App: &App{Name: "test", CacheCap: 100}}
+	app := NewApp(config)
 	randomInts := app.AddSource(randomFunc, opt, nil)
 	window := app.Add(windowFunc, opt, randomInts)
 	sorted := app.Add(sortFunc, opt, window)
@@ -120,7 +123,8 @@ func TestChannels(t *testing.T) {
 		winSize:  100,
 		quant:    4,
 	}
-	app := NewApp("test")
+	config := &Config{App: &App{Name: "test", CacheCap: 100}}
+	app := NewApp(config)
 	randomInts := app.AddSource(randomFunc, opt, nil)
 	ch := randomInts.MapAllN(0, 5)
 	for {
@@ -132,6 +136,50 @@ func TestChannels(t *testing.T) {
 		//t.Logf("final got: %#v", v)
 	}
 }
+
+func TestConfig(t *testing.T) {
+
+	// Prepare dirs.
+	tmpDir := os.TempDir()
+	os.MkdirAll(tmpDir+"test-config", 0755)
+
+	// Create file list yaml file.
+	fn := tmpDir + "config.yaml"
+	t.Logf("Config File: %s.", fn)
+	err := ioutil.WriteFile(fn, []byte(config), 0644)
+	FatalIf(t, err)
+
+	// Read config.
+	config, e := ReadConfig(fn)
+	FatalIf(t, e)
+
+	// Check Config content.
+	t.Logf("Config: %+v", config)
+
+	if config.App.Name != "myapp" {
+		t.Fatalf("App name is [%s]. Expected [%s]", config.App.Name, "myapp")
+	}
+	if config.App.CacheCap != 1000 {
+		t.Fatalf("Cache capacity is [%s]. Expected [%d]", config.App.CacheCap, 1000)
+	}
+
+	if config.Cluster.Name != "test cluster" {
+		t.Fatalf("Cluster name is [%s]. Expected [%s]", config.Cluster.Name, "test cluster")
+	}
+}
+
+const config = `
+app:
+  name: "myapp"
+  cache_cap: 1000
+cluster:
+  name: "test cluster"
+  nodes:
+    - id: 0
+      addr: ":33330"
+    - id: 1
+      addr: ":33331"
+`
 
 func getRandomInts(n int) []int {
 

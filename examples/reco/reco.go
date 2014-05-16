@@ -10,7 +10,12 @@
 // See README.md for details.
 package main
 
-import "log"
+import (
+	"flag"
+	"log"
+
+	"github.com/akualab/occult"
+)
 
 const (
 	// movie lense data set http://grouplens.org/datasets/movielens/
@@ -22,14 +27,37 @@ const (
 	ChunkSize = 200
 )
 
+var isServer bool
+var nodeID int
+
+func init() {
+	flag.IntVar(&nodeID, "node", 0, "the node id for this process")
+	flag.BoolVar(&isServer, "server", false, "runs in server mode")
+}
 func main() {
+
+	flag.Parse()
 
 	// donloads movielens data
 	fn := downloadData()
 
 	// writes train and test data as small data files with ChunkLength lines.
-	dbTrain, dbTest := writeData(fn)
+	dbTrain, dbTest := writeData(fn, nodeID)
 	log.Printf("train: %s, test: %s", dbTrain, dbTest)
-	cf := TrainCF(dbTrain, ChunkSize)
-	EvalCF(dbTest, cf)
+
+	config, err := occult.ReadConfig("config.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Config:\n%s", config)
+
+	// TODO: Need a way hide this from app.
+	config.Cluster.NodeID = nodeID
+	config.App.SetServer(isServer)
+
+	// Run trainer on multiple nodes.
+	cf := TrainCF(dbTrain, config, ChunkSize)
+
+	// Run the evaluation on a single node.
+	EvalCF(dbTest, occult.OneNodeConfig(), cf)
 }

@@ -23,3 +23,6 @@ _testmain.go
 *.sublime-workspace
 darwin
 .DS_Store
+
+reco
+!examples/reco
