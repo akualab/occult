@@ -16,6 +16,7 @@ Finally, run the example:
 ```
 cd GOPATH/src/github.com/akualab/occult/examples/reco/
 go run *.go
+reco  -node=1 -server -v=2 -alsologtostderr -log_dir=logs
 ```
 
 ## Walkthrough

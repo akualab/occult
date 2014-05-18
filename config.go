@@ -2,7 +2,7 @@ package occult
 
 import (
 	"io/ioutil"
-	"log"
+	"github.com/golang/glog"
 
 	"launchpad.net/goyaml"
 )
@@ -38,7 +38,7 @@ func ReadConfig(filename string) (config *Config, err error) {
 	if err != nil {
 		return
 	}
-	//log.Printf("config:\n%s\n\n", config)
+	glog.V(1).Infof("config:\n%s\n\n", config)
 
 	return
 }
@@ -51,7 +51,7 @@ func (c *Config) String() string {
 
 	d, err := goyaml.Marshal(c)
 	if err != nil {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
 	return string(d)
 }

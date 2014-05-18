@@ -12,47 +12,69 @@ package main
 
 import (
 	"flag"
-	"log"
+	"os"
 
 	"github.com/akualab/occult"
+	"github.com/golang/glog"
 )
 
 const (
 	// movie lense data set http://grouplens.org/datasets/movielens/
 	DataURL = "http://www.grouplens.org/system/files/ml-100k.zip"
 
-	OutDir    = "out"
-	TrainFile = "u1.base"
-	TestFile  = "u1.test"
-	ChunkSize = 200
+	OutDir     = "out"
+	TrainFile  = "u1.base"
+	TestFile   = "u1.test"
+	ChunkSize  = 50
+	SingleNode = "reco.yaml"
 )
 
 var isServer bool
 var nodeID int
+var configFile string
 
 func init() {
 	flag.IntVar(&nodeID, "node", 0, "the node id for this process")
 	flag.BoolVar(&isServer, "server", false, "runs in server mode")
+	flag.StringVar(&configFile, "config", SingleNode, "config file")
 }
+
 func main() {
 
+	logDir := os.TempDir()
 	flag.Parse()
+	defer glog.Flush()
+
+	// Check if flag log_dir is set and create dir just in case.
+	// (Otherwise glog will ignore it.)
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "log_dir" {
+			logDir = f.Value.String()
+			err := os.MkdirAll(logDir, 0777)
+			if err != nil {
+				glog.Fatal(err)
+			}
+		}
+	})
+	glog.Infof("log_dir: %s", logDir)
 
 	// donloads movielens data
 	fn := downloadData()
 
 	// writes train and test data as small data files with ChunkLength lines.
 	dbTrain, dbTest := writeData(fn, nodeID)
-	log.Printf("train: %s, test: %s", dbTrain, dbTest)
+	glog.Infof("train: %s, test: %s", dbTrain, dbTest)
 
-	config, err := occult.ReadConfig("config.yaml")
+	config, err := occult.ReadConfig(configFile)
 	if err != nil {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
-	log.Printf("Config:\n%s", config)
+	glog.Infof("Config:\n%s", config)
 
 	// TODO: Need a way hide this from app.
-	config.Cluster.NodeID = nodeID
+	if nodeID > 0 {
+		config.Cluster.NodeID = nodeID
+	}
 	config.App.SetServer(isServer)
 
 	// Run trainer on multiple nodes.

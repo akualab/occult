@@ -8,11 +8,11 @@ package main
 // Evaluate various collaborative filtering algorithms using a test set.
 
 import (
-	"log"
 	"math"
 
 	"github.com/akualab/occult"
 	"github.com/akualab/occult/store"
+	"github.com/golang/glog"
 )
 
 type SqErr struct {
@@ -50,24 +50,24 @@ func EvalCF(dbTest string, config *occult.Config, cf *CF) {
 	for {
 		v, e := evalProc(i)
 		if e != nil && e != occult.ErrEndOfArray {
-			log.Fatal(e)
+			glog.Fatal(e)
 		}
 		if v != nil {
-			//log.Printf("chunk[%4d]: %v", i, v)
+			glog.V(5).Infof("chunk[%4d]: %v", i, v)
 		}
 		if e == occult.ErrEndOfArray {
-			//log.Printf("end of array found at index %d", i)
+			glog.V(3).Infof("end of array found at index %d", i)
 			break
 		}
 		i++
 	}
 
 	n := float64(opt.sqErr.n)
-	log.Printf("N:%.0f, alpha:%.2f", n, cf.alpha)
-	log.Printf("%20s: %.4f", "Global Mean", math.Sqrt(opt.sqErr.globalMean/n))
-	log.Printf("%20s: %.4f", "Adj. User Mean", math.Sqrt(opt.sqErr.weightedUserMean/n))
-	log.Printf("%20s: %.4f", "Item Mean", math.Sqrt(opt.sqErr.weightedItemMean/n))
-	log.Printf("%20s: %.4f", "Simple MF", math.Sqrt(opt.sqErr.mf/n))
+	glog.Infof("N:%.0f, alpha:%.2f", n, cf.alpha)
+	glog.Infof("%20s: %.4f", "Global Mean", math.Sqrt(opt.sqErr.globalMean/n))
+	glog.Infof("%20s: %.4f", "Adj. User Mean", math.Sqrt(opt.sqErr.weightedUserMean/n))
+	glog.Infof("%20s: %.4f", "Item Mean", math.Sqrt(opt.sqErr.weightedItemMean/n))
+	glog.Infof("%20s: %.4f", "Simple MF", math.Sqrt(opt.sqErr.mf/n))
 }
 
 func evalFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
@@ -78,7 +78,7 @@ func evalFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 		return nil, occult.ErrEndOfArray
 	}
 	obs := v.(Obs)
-	//log.Printf("U:%d, I:%d, R:%d, Mean%.2f", obs.User, obs.Item, obs.Rating, opt.globalMean)
+	glog.V(5).Infof("U:%d, I:%d, R:%d, Mean%.2f", obs.User, obs.Item, obs.Rating, opt.globalMean)
 	opt.sqErr.n += 1
 
 	// Global Mean
@@ -98,7 +98,7 @@ func evalFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 	if e != nil {
 		// backoff to another prediction
 		rhat = opt.cf.WeightedItemMean(obs.Item)
-		log.Printf("backing off prediction, %s", e)
+		glog.V(2).Infof("backing off prediction, %s", e)
 	}
 	diff = float64(obs.Rating) - rhat
 	opt.sqErr.mf += diff * diff

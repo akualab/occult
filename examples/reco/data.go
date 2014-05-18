@@ -10,7 +10,6 @@ import (
 	"bufio"
 	"encoding/gob"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -18,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/akualab/occult/store"
+	"github.com/golang/glog"
 )
 
 type Obs struct {
@@ -32,7 +32,7 @@ func writeData(fn string, nodeID int) (dbTrain, dbTest string) {
 	// Open a zip archive for reading.
 	r, err := zip.OpenReader(fn)
 	if err != nil {
-		log.Fatalf("can't open zip file %s - error: %s", fn, err)
+		glog.Fatalf("can't open zip file %s - error: %s", fn, err)
 	}
 	defer r.Close()
 
@@ -40,11 +40,11 @@ func writeData(fn string, nodeID int) (dbTrain, dbTest string) {
 	for _, f := range r.File {
 		fn := path.Base(f.Name)
 		if fn == TrainFile {
-			log.Printf("Found %s\n", f.Name)
+			glog.Infof("Found %s\n", f.Name)
 			dbTrain = writeStore(f, nodeID)
 		}
 		if fn == TestFile {
-			log.Printf("Found %s\n", f.Name)
+			glog.Infof("Found %s\n", f.Name)
 			dbTest = writeStore(f, nodeID)
 		}
 	}
@@ -55,7 +55,7 @@ func writeStore(f *zip.File, nodeID int) (dbName string) {
 
 	rc, e := f.Open()
 	if e != nil {
-		log.Fatal(e)
+		glog.Fatal(e)
 	}
 	defer rc.Close()
 	scanner := bufio.NewScanner(rc)
@@ -76,11 +76,11 @@ func writeStore(f *zip.File, nodeID int) (dbName string) {
 
 	// Return if db exists.
 	if _, err := os.Stat(dbName); err == nil {
-		log.Printf("db %s already exist, skipping...", dbName)
+		glog.Infof("db %s already exist, skipping...", dbName)
 		return dbName
 	}
 
-	log.Printf("creating store %s", dbName)
+	glog.Infof("creating store %s", dbName)
 	db, err := store.NewStore(dbName)
 	fatalIf(err)
 	defer db.Close()
@@ -100,9 +100,9 @@ func writeStore(f *zip.File, nodeID int) (dbName string) {
 		key++
 	}
 	if err = scanner.Err(); err != nil {
-		log.Fatalf("Invalid input: %s", err)
+		glog.Fatalf("Invalid input: %s", err)
 	}
-	log.Printf("wrote %d records", key)
+	glog.Infof("wrote %d records", key)
 	return dbName
 }
 
@@ -111,7 +111,7 @@ func downloadData() string {
 
 	fn, err := downloadFromUrl(DataURL, OutDir)
 	if err != nil {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
 	return fn
 }
@@ -129,12 +129,12 @@ func downloadFromUrl(url, dir string) (string, error) {
 
 	// Return if file exists.
 	if _, err := os.Stat(fileName); err == nil {
-		log.Printf("found data file: %s", fileName)
+		glog.Infof("found data file: %s", fileName)
 		return fileName, nil
 	}
 
 	// Otherwise create file and download.
-	log.Println("Downloading", url, "to", fileName)
+	glog.Infoln("Downloading", url, "to", fileName)
 	output, err := os.Create(fileName)
 	if err != nil {
 		return "", nil
@@ -152,12 +152,12 @@ func downloadFromUrl(url, dir string) (string, error) {
 		return "", err
 	}
 
-	log.Println(n, "bytes downloaded.")
+	glog.Infoln(n, "bytes downloaded.")
 	return fileName, nil
 }
 
 func fatalIf(err error) {
 	if err != nil {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
 }

@@ -8,17 +8,18 @@ package occult
 
 import (
 	"errors"
-	"log"
+	"fmt"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 const (
-	GoMaxProcs       = 2
-	DefaultCacheCap  = 1000
-	DefaultRPAddress = ":131313"
-	NumRetries       = 20
+	GoMaxProcs      = 2
+	DefaultCacheCap = 1000
+	NumRetries      = 20
 )
 
 var (
@@ -66,10 +67,12 @@ func NewApp(config *Config) *App {
 	app := config.App
 	app.procs = make(map[int]*Context)
 	app.cluster = config.Cluster
-	app.router = &blockRouter{
-		numNodes:  len(config.Cluster.Nodes),
-		blockSize: 200,
-		cluster:   app.cluster,
+	if app.cluster != nil {
+		app.router = &blockRouter{
+			numNodes:  len(config.Cluster.Nodes),
+			blockSize: 200,
+			cluster:   app.cluster,
+		}
 	}
 	app.terminate = make(chan bool)
 	runtime.GOMAXPROCS(GoMaxProcs)
@@ -91,7 +94,7 @@ func (app *App) Run() {
 	// Start local server.
 	addr := app.cluster.LocalNode().Addr
 	go app.rpServe(addr)
-	log.Printf("server started on address %s", addr)
+	glog.Infof("server started on address %s", addr)
 
 	// Init clients to connect to remote nodes.
 	var err error
@@ -99,16 +102,16 @@ func (app *App) Run() {
 		if node.ID != app.cluster.NodeID {
 			for j := 0; ; j++ {
 				if j > NumRetries {
-					log.Fatalf("too many retries, can't connect to server addr [%s]", node.Addr)
+					glog.Fatalf("too many retries, can't connect to server addr [%s]", node.Addr)
 				}
-				log.Printf("trying to connect to address %s", node.Addr)
+				glog.Infof("trying to connect to address %s", node.Addr)
 				node.rpClient, err = rpClient(node.Addr)
 				if err == nil {
 					break
 				}
 				time.Sleep(5 * time.Second)
 			}
-			log.Printf("success! conneted to address %s", node.Addr)
+			glog.Infof("success! conneted to address %s", node.Addr)
 		}
 	}
 
@@ -119,15 +122,15 @@ func (app *App) Run() {
 	// Wait for all remote nodes to be ready.
 	for _, node := range app.cluster.Nodes {
 		if node.ID != app.cluster.NodeID {
-			log.Printf("waiting for server %s to be ready", node.Addr)
+			glog.Infof("waiting for server %s to be ready", node.Addr)
 			ch := make(chan bool)
 			rpIsReady(node, ch)
 			<-ch
-			log.Printf("server %s is ready!", node.Addr)
+			glog.Infof("server %s is ready!", node.Addr)
 		}
 	}
 
-	log.Printf("all remote nodes are ready")
+	glog.Infof("all remote nodes are ready")
 
 	// Server mode is done here.
 	if app.isServer {
@@ -174,7 +177,7 @@ func (app *App) procInstance(ctx *Context) Processor {
 
 	return func(key uint64) (Value, error) {
 
-		// TODO: implement remote execution.
+		// TODO: optimization
 		// We received a request for a given key. In a cluster, we need
 		// to determine which node should do the work. Here is where we need
 		// to include the logic. We also need to work in batches to reduce the number
@@ -186,14 +189,13 @@ func (app *App) procInstance(ctx *Context) Processor {
 		if app.cluster != nil {
 			// Let router do the magic, tell us where to send the work.
 			targetNode := app.router.Route(key, ctx.id)
-			//log.Printf("DEBUG target node  %#v", targetNode)
+			if glog.V(5) {
+				glog.Infof("send work to target node %#v", targetNode)
+			}
 			// Skip remote call if we stay on this node.
 			if targetNode.ID != app.cluster.NodeID {
-				//log.Printf("DEBUG before calling node %d", targetNode.ID)
 				// Finally, do synchronous remote call and return.
-				log.Printf("DEBUG request remote value key:%d, id:%d, target:%#v", key, ctx.id, targetNode)
 				val, err := app.rpCall(key, ctx.id, targetNode)
-				log.Printf("DEBUG got remote value key:%d, id:%d, err:%v, val:%#v", key, ctx.id, err, val)
 				return val, err
 			}
 		}
@@ -201,14 +203,15 @@ func (app *App) procInstance(ctx *Context) Processor {
 
 		// Check if the data is in the cache.
 		if v, ok := ctx.cache.get(key); ok {
-			//fmt.Printf("DEBUG: CACHE HIT in proc %d\n", ctx.id)
+			if glog.V(7) {
+				fmt.Printf("cache hit in proc %d\n", ctx.id)
+			}
 			return v, nil
 		}
 		result, err := ctx.procFunc(key, ctx)
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("DEBUG got local value key:%d, id:%d, val:%v", key, ctx.id, &result)
 		ctx.cache.set(key, result)
 		return result, nil
 	}
@@ -278,11 +281,9 @@ func (c *counter) worker(p Processor, values chan Value) {
 
 	for {
 		k := c.key()
-		log.Printf("DEBUG worker working on key: %d", k)
 		v, err := p(k)
-		log.Printf("DEBUG worker working on key %d result: %v", k, &v)
 		if err != nil {
-			log.Printf("DEBUG worker exiting with err: %s", err)
+			glog.V(4).Infof("worker exiting with err: %s", err)
 			values <- nil
 			return
 		}
@@ -303,16 +304,15 @@ func master(p Processor, numWorkers int, out chan Value) {
 	n := 0
 	for {
 		v := <-values
-		log.Printf("DEBUG master got result: %v", &v)
 		if v == nil {
 			n++ // increment when worker finishes.
-			log.Printf("DEBUG master got nil, n:%d", n)
+			glog.V(4).Infof("master got nil, n:%d", n)
 		} else {
-			log.Printf("DEBUG master send out")
+			glog.V(4).Infof("master send out")
 			out <- v
 		}
 		if n == numWorkers {
-			log.Printf("DEBUG master closing")
+			glog.V(4).Infof("master closing")
 			close(values)
 			close(out)
 			return

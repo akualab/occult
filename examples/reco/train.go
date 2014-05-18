@@ -8,14 +8,20 @@ package main
 // Train various collaborative filtering algorithms using a training set.
 
 import (
+	"encoding/gob"
 	"fmt"
-	"log"
 	"runtime"
 	"time"
 
 	"github.com/akualab/occult"
 	"github.com/akualab/occult/store"
+	"github.com/golang/glog"
 )
+
+func init() {
+	gob.Register([]Obs{})
+	gob.Register(&CF{})
+}
 
 type Options struct {
 	db             *store.Store
@@ -24,7 +30,7 @@ type Options struct {
 	learnRate      float64
 	numFactors     int
 	meanNorm       bool    // subtract bias: mu+bi+bu
-	alpha          float64 // cont to combine global mean
+	alpha          float64 // const to combine global mean
 }
 
 // gets data from DB
@@ -42,6 +48,9 @@ func movieFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 			return s, occult.ErrEndOfArray
 		}
 		s = append(s, v.(Obs))
+	}
+	if glog.V(5) {
+		glog.Infof("movieFunc returning slice idx: %d, length = %d", idx, len(s))
 	}
 	return s, nil
 }
@@ -65,6 +74,9 @@ func cfFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 		}
 		cf.Update(v.User, v.Item, v.Rating)
 	}
+	if glog.V(5) {
+		glog.Infof("cfFunc returning idx:%d, NumRatingsx:%#v", idx, cf.NumRatings)
+	}
 	return cf, err // err may be ErrEndOfArray
 }
 
@@ -79,6 +91,9 @@ func aggCFFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 	for {
 		v, ok := <-ch
 		if !ok {
+			if glog.V(5) {
+				glog.Infof("aggCFFunc returning idx:%d, NumRatingsx:%#v", idx, cf.NumRatings)
+			}
 			return cf, nil
 		}
 		q := v.(*CF)
@@ -103,7 +118,7 @@ func mfFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 	// Now we can iterate over chunks and for each chunk.
 	var c, iter uint64
 	for ; iter < idx; iter++ {
-		log.Printf("GD iter: %d", iter)
+		glog.V(1).Infof("GD iter: %d", iter)
 		for c = 0; ; c++ {
 			in0, err := chunks(c)
 			if err == occult.ErrEndOfArray {
@@ -140,25 +155,24 @@ func TrainCF(dbName string, config *occult.Config, chunkSize int) *CF {
 	}
 
 	app := occult.NewApp(config)
-	app.CacheCap = 400
 	dataChunk := app.AddSource(movieFunc, opt, nil)
 	cfProc := app.Add(cfFunc, opt, dataChunk)
 	aggCFProc := app.Add(aggCFFunc, opt, cfProc)
 
 	mfProc := app.Add(mfFunc, opt, dataChunk, aggCFProc)
 
-	// If server, stay here forever, otherwise keep going.
+	// If server, stays here forever, otherwise keep going.
 	app.Run()
 
-	log.Printf("num logical CPUs: %d", runtime.NumCPU())
+	glog.Infof("num logical CPUs: %d", runtime.NumCPU())
 	start := time.Now()
 	y, ey := mfProc(numGDIterations) // the index is the # iterations
 	if ey != nil {
-		log.Fatal(ey)
+		glog.Fatal(ey)
 	}
 	end := time.Now()
 	d := end.Sub(start)
-	log.Printf("train duration: %v", d)
+	glog.Infof("train duration: %v", d)
 
 	return y.(*CF)
 }

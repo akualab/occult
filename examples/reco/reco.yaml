@@ -1,0 +1,3 @@
+app:
+  name: "cf"
+  cache_cap: 2000

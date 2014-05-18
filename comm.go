@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/rpc"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 // Here are the functions that handle remote process requests. Abtraction is: give me values
@@ -16,7 +18,7 @@ import (
 func (app *App) rpCall(key uint64, procID int, node *Node) (Value, error) {
 	vals, err := app.rpCallSlice(key, key+1, procID, node)
 	if vals == nil {
-		log.Printf("DEBUG CALL err: %s", err)
+		glog.Infof("DEBUG CALL err: %s", err)
 		return nil, err
 	}
 	return vals[0], err
@@ -26,13 +28,13 @@ func (app *App) rpCall(key uint64, procID int, node *Node) (Value, error) {
 func (app *App) rpCallSlice(start, end uint64, procID int, node *Node) (vals []Value, err error) {
 	args := &RArgs{Start: start, End: end, ProcID: procID}
 	reply := RValue{}
-	log.Printf("DEBUG CALLSLICE before call:%#v", args)
+	//	glog.Infof("DEBUG CALLSLICE before call:%#v", args)
 	err = node.rpClient.Call("RProc.Get", args, &reply)
 	if err != nil {
-		log.Printf("DEBUG CALLSLICE err: %s", err)
+		glog.Infof("DEBUG CALLSLICE err: %s", err)
 		return nil, fmt.Errorf("rpCall error: %s", err)
 	}
-	log.Printf("DEBUG CALLSLICE reply:%#v", reply)
+	//	glog.Infof("DEBUG CALLSLICE reply:%#v", reply)
 	return reply.Vals, nil
 }
 
@@ -42,14 +44,13 @@ func rpIsReady(node *Node, ch chan bool) {
 	args := 0
 	var ready bool
 	for !ready {
-		log.Printf("checking if server %s is ready", node.Addr)
+		glog.Infof("checking if server %s is ready", node.Addr)
 		err := node.rpClient.Call("RProc.Ready", args, &ready)
 		if err != nil {
-			log.Printf("waiting for server ready: %s", err)
+			glog.Infof("waiting for server ready: %s", err)
 		}
 		time.Sleep(2 * time.Second)
 	}
-	//ch <- true
 	close(ch)
 }
 
@@ -105,17 +106,17 @@ func (rp *RProc) Get(args *RArgs, rv *RValue) error {
 	ctx := rp.app.Context(args.ProcID)
 	p := ctx.proc
 	idx := args.Start
-	log.Printf("DEBUG: Get ctx:%#v, args:%v", ctx, args)
+	//	glog.Infof("DEBUG: Get ctx:%#v, args:%v", ctx, args)
 	for ; idx < args.End; idx++ {
 		val, err := p(uint64(idx))
-		log.Printf("DEBUG: Get idx:%d, val:%v", idx, val)
+		//		glog.Infof("DEBUG: Get idx:%d, val:%v", idx, val)
 		if err != nil {
-			log.Printf("DEBUG: Get error:%s", err)
+			glog.Infof("DEBUG: Get error:%s", err)
 			return fmt.Errorf("rpc error: %s", err)
 		}
 		rv.Vals = append(rv.Vals, val)
 	}
-	log.Printf("DEBUG: Get args:%#v, rv:%#v", args, rv)
+	//	glog.Infof("DEBUG: Get args:%#v, rv:%#v", args, rv)
 	return nil
 }
 
