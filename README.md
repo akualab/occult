@@ -92,7 +92,7 @@ to get a value from the input:
 var uint64 key = 111 // some key
 in0, err := aProcessor(key) // Processors return errors.
 if err == occult.ErrEndOfArray {
-	break // when we don't know the length of teh array, we rely on errors.
+	break // when we don't know the length of the array, we rely on errors.
 }
 s := in0.(MyType) // use type assertion to uncover the underlying type
 ```
@@ -101,18 +101,19 @@ the variable `s` has the value produced by `aProcessor` for `key` 111.
 
 Finally, to build an application and get Processor instances, we add the ProcFunc functions to an app using `app.Add()` and `app.AddSource()`. The latter will set a flag to indicate that is a slow source. This information will be used to allocate work to nodes efficiently.
 
-Note that a ProcFunc can be used to create more than one processor. The Processor instances will have the same functionality but may use different inputs adn parameters. ProcFunc can be written to be highly reusable or highly customized for the application (one-time use).
+Note that a ProcFunc can be used to create more than one processor. The Processor instances will have the same functionality but may use different inputs and parameters. ProcFunc can be written to be highly reusable or highly customized for the application (one-time use).
 
 As always, with Go, we decide to reuse or rewrite using a pragmatic approach. Writing custom code can be much faster and cleaner than writing reusable code. Fewer levels of indirection makes code simpler and easier to understand.
 
 ## Using a Cluster
 
-### Not Implemented Yet
-The cluster functionality is not yet implemented but should be relatively simple given the tools already available (Go [RPC](http://golang.org/pkg/net/rpc/) for interprocess communication and, perhaps, [CoreOS etcd](https://github.com/coreos/etcd) to coordinate the cluster, and [levigo](https://github.com/jmhodges/levigo) which provides bindings for leveldb.
+We implemented initial cluster functionality for experimentation. Any node can do any work but the router is responsible to make the distribution of work efficient. For now router is doing a dumb round-robin.To send values across the wire, we use the [RPC](http://golang.org/pkg/net/rpc/) package. Values are encoding using GOB. Custom types must be registered.
 
 ### Finding Memory
 
 Performance is achieved by distributing work among the nodes in the cluster. However, any node can do any work. A parallel system will be responsible for maintaining *routing tables* that instruct the app where to get the work done for a given index. This information is built dynamically. For example, to get `someWork(333)`, the app will look up node for the (processor, key) pair. If the info does not exist, the node is chosen based on load or other criteria. However, the mapping between work and node is broadcasted to all the nodes in the cluster to update all the local routing tables.
+
+Each processor instance has a separate LRU cache. Values are cached by key. The code was adapted from the [vitess](https://code.google.com/p/vitess/source/browse/go/cache/lru_cache.go). For now, all cached have the same capacity (max number of items). However, cache capacity can be managed dynamically, based on performance.
 
 ### Messaging
 
@@ -122,8 +123,7 @@ Because all nodes can do any work, the system feels like a stateless machine, ev
 
 * Get feedback on overall architecture and API.
 * Decide: does the world need this system? Written in Go?
-* Implement cluster functionality.
-* Use an LRU cache (leveldb? pure go?)
+* Improve cluster functionality. (routing, cluster coordination, failure mgmt, config changes.)
 * Find a task (sponsor?) to build an app for testing using a very large data set. (suggestions?)
 
 Thanks! Leo Neumeyer, May 12, 2014.
