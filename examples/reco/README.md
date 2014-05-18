@@ -14,8 +14,9 @@ go get -u -x  github.com/akualab/occult/examples/reco
 Finally, run the example on a single node:
 
 ```
-cd GOPATH/src/github.com/akualab/occult/examples/reco/
-go run *.go
+cd MY_GOPATH/src/github.com/akualab/occult/examples/reco/
+go build
+reco
 ```
 
 Now, let's try to run on two nodes. Open two terminals on the same machine and type in sequence:
