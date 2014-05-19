@@ -8,7 +8,6 @@ package occult
 
 import (
 	"errors"
-	"fmt"
 	"runtime"
 	"sync"
 	"time"
@@ -172,6 +171,20 @@ func (app *App) Add(fn ProcFunc, opt interface{}, inputs ...Processor) Processor
 	return ctx.proc
 }
 
+func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor) *Context {
+	id := len(app.procs)
+	ctx := &Context{
+		// TODO: consider implement cache using a circular buffer. For now using LRU.
+		cache:    newCache(app.CacheCap),
+		procFunc: fn,
+		Options:  opt,
+		inputs:   inputs,
+		id:       id,
+	}
+	app.procs[id] = ctx
+	return ctx
+}
+
 // Closure to generate a Processor with parameter id and cache.
 func (app *App) procInstance(ctx *Context) Processor {
 
@@ -204,7 +217,7 @@ func (app *App) procInstance(ctx *Context) Processor {
 		// Check if the data is in the cache.
 		if v, ok := ctx.cache.get(key); ok {
 			if glog.V(7) {
-				fmt.Printf("cache hit in proc %d\n", ctx.id)
+				glog.Infof("cache hit in proc %d\n", ctx.id)
 			}
 			return v, nil
 		}
@@ -215,20 +228,6 @@ func (app *App) procInstance(ctx *Context) Processor {
 		ctx.cache.set(key, result)
 		return result, nil
 	}
-}
-
-func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor) *Context {
-	id := len(app.procs)
-	ctx := &Context{
-		// TODO: consider implement cache using a circular buffer. For now using LRU.
-		cache:    newCache(app.CacheCap),
-		procFunc: fn,
-		Options:  opt,
-		inputs:   inputs,
-		id:       id,
-	}
-	app.procs[id] = ctx
-	return ctx
 }
 
 // Map applies the processor to the key range {start..end}.
