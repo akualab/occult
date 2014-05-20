@@ -8,7 +8,9 @@ package occult
 
 import (
 	"errors"
+	"os"
 	"runtime"
+	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -16,9 +18,11 @@ import (
 )
 
 const (
-	GoMaxProcs      = 2
-	DefaultCacheCap = 1000
-	NumRetries      = 20
+	GoMaxProcs               = 2
+	DefaultCacheCap          = 2000
+	NumRetries               = 20 // Num attempts to connect to other nodes.
+	DefaultBlockSize  uint64 = 10
+	DefaultNumWorkers        = 2
 )
 
 var (
@@ -27,6 +31,11 @@ var (
 
 // All processors must be implemented using this function type.
 type ProcFunc func(key uint64, ctx *Context) (Value, error)
+
+// A Processor instance.
+// Once the processor instance is created, the parameters and inputs cannot
+// be changed.
+type Processor func(key uint64) (Value, error)
 
 // The context provides internal information for processor instances.
 // Each processor instance has a context.
@@ -75,11 +84,16 @@ func NewApp(config *Config) *App {
 	}
 	app.terminate = make(chan bool)
 	runtime.GOMAXPROCS(GoMaxProcs)
+	if app.CacheCap == 0 {
+		glog.Warningf("using default cache capacity value of %d", app.CacheCap)
+		app.CacheCap = DefaultCacheCap
+	}
 	return app
 }
 
 func (app *App) SetServer(b bool) {
 	app.isServer = b
+	glog.V(2).Infof("setting isServer flag")
 }
 
 // Run app.
@@ -133,8 +147,29 @@ func (app *App) Run() {
 
 	// Server mode is done here.
 	if app.isServer {
+		glog.Infof("server is running...")
 		<-app.terminate
+		pprof.StopCPUProfile()
+		glog.Flush()
+		os.Exit(0)
 	}
+}
+
+// Shutdown all the servers in the cluster.
+func (app *App) Shutdown() {
+
+	if app.cluster == nil {
+		return // nothing to shut down.
+	}
+
+	glog.Info("shutting down the cluster")
+	for _, node := range app.cluster.Nodes {
+		if node.ID != app.cluster.NodeID {
+			glog.Infof("shutting down server %s", node.Addr)
+			rpShutdown(node)
+		}
+	}
+	glog.Info("shutting down completed")
 }
 
 func (app *App) Context(id int) *Context {
@@ -144,10 +179,43 @@ func (app *App) Context(id int) *Context {
 // The value returned by Processors.
 type Value interface{}
 
-// A Processor instance.
-// Once the processor instance is created, the parameters and inputs cannot
-// be changed.
-type Processor func(key uint64) (Value, error)
+// A slice of values.
+type Slice struct {
+	Offset uint64
+	Data   []Value
+}
+
+// Creates a new Slice.
+func NewSlice(start uint64, size, cap int) *Slice {
+	return &Slice{
+		Offset: start,
+		Data:   make([]Value, size, cap),
+	}
+}
+
+// Converts Values to a Slice.
+func ToSlice(key uint64, vals ...Value) *Slice {
+	s := NewSlice(key, len(vals), len(vals))
+	for _, v := range vals {
+		s.Data = append(s.Data, v)
+	}
+	return s
+}
+
+// The length of the Slice.
+func (s *Slice) Length() int {
+	return len(s.Data)
+}
+
+// The offset for this Slice.
+func (s *Slice) Start() uint64 {
+	return s.Offset
+}
+
+// Offset position after the last value of this Slice.
+func (s *Slice) End() uint64 {
+	return s.Offset + uint64(len(s.Data))
+}
 
 // Same as Add but indicating that this is a presistent source.
 // The system will attempt to use the same cluster node for a given key. This
@@ -174,7 +242,7 @@ func (app *App) Add(fn ProcFunc, opt interface{}, inputs ...Processor) Processor
 func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor) *Context {
 	id := len(app.procs)
 	ctx := &Context{
-		// TODO: consider implement cache using a circular buffer. For now using LRU.
+		// TODO: consider using a circular buffer. For now using LRU.
 		cache:    newCache(app.CacheCap),
 		procFunc: fn,
 		Options:  opt,
@@ -190,37 +258,54 @@ func (app *App) procInstance(ctx *Context) Processor {
 
 	return func(key uint64) (Value, error) {
 
-		// TODO: optimization
-		// We received a request for a given key. In a cluster, we need
-		// to determine which node should do the work. Here is where we need
-		// to include the logic. We also need to work in batches to reduce the number
-		// of requests. Perhaps, we can use a default batch size so when we request
-		// work for key we also do the slice up to key+batchSize. If the this is the
-		// target node, continue work here.
+		var err error
+		var vals *Slice
 
-		// If there is a cluster send work to other nodes.
-		if app.cluster != nil {
-			// Let router do the magic, tell us where to send the work.
-			targetNode := app.router.Route(key, ctx.id)
-			if glog.V(5) {
-				glog.Infof("send work to target node %#v", targetNode)
-			}
-			// Skip remote call if we stay on this node.
-			if targetNode.ID != app.cluster.NodeID {
-				// Finally, do synchronous remote call and return.
-				val, err := app.rpCall(key, ctx.id, targetNode)
-				return val, err
-			}
-		}
-		// Do local computation.
-
-		// Check if the data is in the cache.
+		// First, we check if the data is already in the cache.
 		if v, ok := ctx.cache.get(key); ok {
 			if glog.V(7) {
 				glog.Infof("cache hit in proc %d\n", ctx.id)
 			}
 			return v, nil
 		}
+
+		// Check if we need to send teh work to a remote node.
+		if app.cluster != nil {
+			// Let router do the magic, tell us where to send the work.
+			targetNode := app.router.Route(key, ctx.id)
+
+			if glog.V(5) {
+				if targetNode.ID != app.cluster.NodeID {
+					glog.Infof("send work to target node key:%d, procid:%d,  %#v",
+						int(key), ctx.id, targetNode)
+				} else {
+					glog.Infof("do work on local node key:%d, procid:%d", int(key),
+						ctx.id)
+				}
+			}
+
+			// Skip remote call if work is done by this node.
+			if targetNode.ID != app.cluster.NodeID {
+
+				// Prepare to send work to remote node and wait for results.
+
+				// For efficiency, we request a block of keys at a time.
+				// Key are mapped to blocks. blockStart() returns the start of the block.
+				start := blockStart(key, DefaultBlockSize)
+				// Get the slice from the remote node.
+				vals, err = app.rpCallSlice(start, start+DefaultBlockSize, ctx.id, targetNode)
+				if err != nil || vals.Length() == 0 {
+					return nil, err
+				}
+				// Save the slice in the cache.
+				ctx.cache.setSlice(start, vals)
+				// Return only the value for key requested (not the slice).
+				// blockIndex() maps the requested key to the slice index.
+				return vals.Data[blockIndex(key, DefaultBlockSize)], nil
+			}
+		}
+
+		// Do local computation.
 		result, err := ctx.procFunc(key, ctx)
 		if err != nil {
 			return nil, err
@@ -245,56 +330,66 @@ func (p Processor) Map(start, end uint64) (values []Value, err error) {
 }
 
 // MapAllN applies the processor to the key range {start..}.
-// Divides the work among N workers to take advantage
-// of multicore CPUs.
-func (p Processor) MapAllN(start uint64, numWorkers int) chan Value {
+// Divides the work among N workers to do parallel processing.
+// The blockSize is the number of values sent to remote nodes
+// in a batch. Bigger blocks are more efficient but consume
+// more memory add latency.
+func (p Processor) MapAllN(start uint64, numWorkers int, blockSize uint64) chan Value {
 
 	out := make(chan Value, numWorkers)
-	go master(p, numWorkers, out)
+	go master(p, numWorkers, blockSize, out)
 	return out
 }
 
-// Same as MapAllN but gets the number of workers using
-// runtime.NumCPU().
+// Same as MapAllN but uses default values for the number of
+// workers and block size.
 func (p Processor) MapAll(start uint64) chan Value {
-	return p.MapAllN(start, runtime.NumCPU())
+	return p.MapAllN(start, DefaultNumWorkers, DefaultBlockSize)
 }
 
 // Provides keys to workers.
 type counter struct {
-	k uint64
+	k    uint64
+	size uint64
 	sync.Mutex
 }
 
-// Safely returns the next key to workers.
-func (c *counter) key() uint64 {
+// Safely returns the start of the next block.
+func (c *counter) block() uint64 {
 	c.Lock()
 	defer c.Unlock()
 	v := c.k
-	c.k++
+	c.k += c.size
 	return v
 }
 
-// Worker does work for key obtained (safely) from counter.
+// Worker does work for block of keys obtained (safely) from counter.
 func (c *counter) worker(p Processor, values chan Value) {
-
 	for {
-		k := c.key()
-		v, err := p(k)
-		if err != nil {
-			glog.V(4).Infof("worker exiting with err: %s", err)
-			values <- nil
-			return
+		start := c.block()
+		for key := start; key < start+c.size; key++ {
+			v, err := p(key)
+			if err != nil {
+				glog.V(4).Infof("worker exiting with err: %s", err)
+				values <- nil
+				return
+			}
+			values <- v
 		}
-		values <- v
 	}
 }
 
 // Coordinate workers.
-func master(p Processor, numWorkers int, out chan Value) {
+// TODO: num workers for local vs. remote work is the same.
+// We need separate params because local depends on the number of cores
+// and remote depends on the network topology. To do this we will
+// need to determine local vs. remote upstream instead of downstream
+// from here.
+func master(p Processor, numWorkers int, size uint64, out chan Value) {
 
-	values := make(chan Value)
-	cnt := counter{}
+	//values := make(chan Value)
+	values := make(chan Value, 1000)
+	cnt := counter{size: size}
 	for i := 0; i < numWorkers; i++ {
 		go cnt.worker(p, values)
 	}
@@ -317,4 +412,14 @@ func master(p Processor, numWorkers int, out chan Value) {
 			return
 		}
 	}
+}
+
+// Returns the index in a block given key and block size.
+func blockIndex(key, size uint64) int {
+	return int(key % size)
+}
+
+// Returns the index of a block given block size and key.
+func blockStart(key, size uint64) uint64 {
+	return (key / size) * size
 }

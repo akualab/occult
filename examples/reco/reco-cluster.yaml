@@ -1,6 +1,6 @@
 app:
   name: "cf"
-  cache_cap: 1000
+  cache_cap: 2000
 cluster:
   name: "local"
   nodes:

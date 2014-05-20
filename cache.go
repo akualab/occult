@@ -67,6 +67,18 @@ func (c *cache) get(key uint64) (v Value, ok bool) {
 	return element.Value.(*entry).value, true
 }
 
+func (c *cache) getSlice(start uint64, size int) (sl *Slice) {
+	sl = NewSlice(start, 0, size)
+	for k, _ := range sl.Data {
+		v, ok := c.get(start + uint64(k))
+		if !ok {
+			break
+		}
+		sl.Data = append(sl.Data, v)
+	}
+	return
+}
+
 func (c *cache) set(key uint64, value Value) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -75,6 +87,14 @@ func (c *cache) set(key uint64, value Value) {
 		c.updateInplace(element, value)
 	} else {
 		c.addNew(key, value)
+	}
+}
+
+func (c *cache) setSlice(start uint64, sl *Slice) {
+
+	for k, v := range sl.Data {
+		key := start + uint64(k)
+		c.set(key, v)
 	}
 }
 

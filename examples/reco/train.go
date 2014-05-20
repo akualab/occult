@@ -174,5 +174,6 @@ func TrainCF(dbName string, config *occult.Config, chunkSize int) *CF {
 	d := end.Sub(start)
 	glog.Infof("train duration: %v", d)
 
+	app.Shutdown()
 	return y.(*CF)
 }

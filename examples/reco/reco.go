@@ -12,7 +12,10 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
+	"runtime/pprof"
+	"strconv"
 
 	"github.com/akualab/occult"
 	"github.com/golang/glog"
@@ -32,11 +35,13 @@ const (
 var isServer bool
 var nodeID int
 var configFile string
+var prof bool
 
 func init() {
 	flag.IntVar(&nodeID, "node", 0, "the node id for this process")
 	flag.BoolVar(&isServer, "server", false, "runs in server mode")
 	flag.StringVar(&configFile, "config", SingleNode, "config file")
+	flag.BoolVar(&prof, "prof", false, "write profile information")
 }
 
 func main() {
@@ -44,6 +49,19 @@ func main() {
 	logDir := os.TempDir()
 	flag.Parse()
 	defer glog.Flush()
+
+	if prof {
+		err := os.MkdirAll("logs", 0777)
+		if err != nil {
+			glog.Fatal(err)
+		}
+		f, err := os.Create("logs/reco-" + strconv.Itoa(nodeID) + ".pprof")
+		if err != nil {
+			fmt.Println("Error: ", err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 
 	// Check if flag log_dir is set and create dir just in case.
 	// (Otherwise glog will ignore it.)

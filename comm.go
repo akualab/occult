@@ -16,26 +16,25 @@ import (
 
 // Executes remote synchronous call to target remote process on target node. Returns value.
 func (app *App) rpCall(key uint64, procID int, node *Node) (Value, error) {
-	vals, err := app.rpCallSlice(key, key+1, procID, node)
-	if vals == nil {
-		glog.Infof("DEBUG CALL err: %s", err)
+	slice, err := app.rpCallSlice(key, key+1, procID, node)
+	if slice.Data == nil {
+		glog.Error(err)
 		return nil, err
 	}
-	return vals[0], err
+	return slice.Data[0], err
 }
 
 // Executes remote synchronous call to target remote process on target node. Returns slice.
-func (app *App) rpCallSlice(start, end uint64, procID int, node *Node) (vals []Value, err error) {
+func (app *App) rpCallSlice(start, end uint64, procID int, node *Node) (result *Slice, err error) {
 	args := &RArgs{Start: start, End: end, ProcID: procID}
-	reply := RValue{}
-	//	glog.Infof("DEBUG CALLSLICE before call:%#v", args)
+	var reply Slice
 	err = node.rpClient.Call("RProc.Get", args, &reply)
 	if err != nil {
-		glog.Infof("DEBUG CALLSLICE err: %s", err)
-		return nil, fmt.Errorf("rpCall error: %s", err)
+		glog.Error(err)
+		return nil, err
 	}
-	//	glog.Infof("DEBUG CALLSLICE reply:%#v", reply)
-	return reply.Vals, nil
+	result = &reply
+	return result, nil
 }
 
 // Check if remote server is ready.
@@ -52,6 +51,15 @@ func rpIsReady(node *Node, ch chan bool) {
 		time.Sleep(2 * time.Second)
 	}
 	close(ch)
+}
+
+func rpShutdown(node *Node) {
+	args := 0
+	var reply bool
+	err := node.rpClient.Call("RProc.Shutdown", args, &reply)
+	if err != nil {
+		glog.Infof("shutdown for node %s failed with error: %s", node.ID, err)
+	}
 }
 
 // Starts the remote process server.
@@ -88,10 +96,10 @@ type RArgs struct {
 }
 
 // Returned type for RPC method.
-type RValue struct {
-	Vals []Value
-	// here we can have metadata sent by remote server.
-}
+//type RValue struct {
+//	Vals []Value
+// here we can have metadata sent by remote server.
+//}
 
 // RPC type to get remote values.
 type RProc struct {
@@ -99,24 +107,24 @@ type RProc struct {
 }
 
 // RPC method to get remote values.
-func (rp *RProc) Get(args *RArgs, rv *RValue) error {
+func (rp *RProc) Get(args *RArgs, rv *Slice) error {
 
-	n := args.End - args.Start
-	rv.Vals = make([]Value, 0, n)
+	n := int(args.End - args.Start)
+	//rv = NewSlice(args.Start, 0, n)
+	rv.Offset = args.Start
+	rv.Data = make([]Value, 0, n)
+
 	ctx := rp.app.Context(args.ProcID)
 	p := ctx.proc
 	idx := args.Start
-	//	glog.Infof("DEBUG: Get ctx:%#v, args:%v", ctx, args)
 	for ; idx < args.End; idx++ {
 		val, err := p(uint64(idx))
-		//		glog.Infof("DEBUG: Get idx:%d, val:%v", idx, val)
 		if err != nil {
-			glog.Infof("DEBUG: Get error:%s", err)
+			glog.Error(err)
 			return fmt.Errorf("rpc error: %s", err)
 		}
-		rv.Vals = append(rv.Vals, val)
+		rv.Data = append(rv.Data, val)
 	}
-	//	glog.Infof("DEBUG: Get args:%#v, rv:%#v", args, rv)
 	return nil
 }
 
@@ -126,5 +134,11 @@ func (rp *RProc) Ready(args int, ready *bool) error {
 	if rp.app.ready {
 		*ready = true
 	}
+	return nil
+}
+
+func (rp *RProc) Shutdown(args int, ready *bool) error {
+
+	rp.app.terminate <- true
 	return nil
 }

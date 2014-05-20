@@ -78,7 +78,7 @@ func evalFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 		return nil, occult.ErrEndOfArray
 	}
 	obs := v.(Obs)
-	glog.V(5).Infof("U:%d, I:%d, R:%d, Mean%.2f", obs.User, obs.Item, obs.Rating, opt.globalMean)
+	glog.V(7).Infof("U:%d, I:%d, R:%d, Mean%.2f", obs.User, obs.Item, obs.Rating, opt.globalMean)
 	opt.sqErr.n += 1
 
 	// Global Mean
