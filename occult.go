@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	GoMaxProcs               = 2
 	DefaultCacheCap          = 2000
 	NumRetries               = 20 // Num attempts to connect to other nodes.
 	DefaultBlockSize  uint64 = 10
 	DefaultNumWorkers        = 2
+	DefaultGoMaxProcs        = 2
 )
 
 var (
@@ -51,6 +51,7 @@ type Context struct {
 	proc     Processor
 	inputs   []Processor
 	isSource bool
+	app      *App
 }
 
 func (ctx *Context) Inputs() []Processor {
@@ -59,9 +60,13 @@ func (ctx *Context) Inputs() []Processor {
 
 // An App coordinates the execution of a set of processors.
 type App struct {
-	Name     string `yaml:"name"`
-	CacheCap uint64 `yaml:"cache_cap"`
-	procs    map[int]*Context
+	Name       string `yaml:"name"`
+	CacheCap   uint64 `yaml:"cache_cap"`
+	NumWorkers int    `yaml:"num_workers"`
+	BlockSize  uint64 `yaml:"block_size"`
+	NumRetries int    `yaml:"num_retries"`
+	GoMaxProcs int    `yaml:"go_max_procs"`
+	procs      map[int]*Context
 	// The node on which this app is running.
 	cluster   *Cluster
 	router    Router
@@ -83,10 +88,19 @@ func NewApp(config *Config) *App {
 		}
 	}
 	app.terminate = make(chan bool)
-	runtime.GOMAXPROCS(GoMaxProcs)
+	if app.GoMaxProcs == 0 {
+		app.GoMaxProcs = DefaultGoMaxProcs
+	}
+	runtime.GOMAXPROCS(app.GoMaxProcs)
 	if app.CacheCap == 0 {
 		glog.Warningf("using default cache capacity value of %d", app.CacheCap)
 		app.CacheCap = DefaultCacheCap
+	}
+	if app.NumWorkers == 0 {
+		app.NumWorkers = DefaultNumWorkers
+	}
+	if app.BlockSize == 0 {
+		app.BlockSize = DefaultBlockSize
 	}
 	return app
 }
@@ -248,6 +262,7 @@ func (app *App) createContext(fn ProcFunc, opt interface{}, inputs ...Processor)
 		Options:  opt,
 		inputs:   inputs,
 		id:       id,
+		app:      app,
 	}
 	app.procs[id] = ctx
 	return ctx
@@ -291,9 +306,9 @@ func (app *App) procInstance(ctx *Context) Processor {
 
 				// For efficiency, we request a block of keys at a time.
 				// Key are mapped to blocks. blockStart() returns the start of the block.
-				start := blockStart(key, DefaultBlockSize)
+				start := blockStart(key, app.BlockSize)
 				// Get the slice from the remote node.
-				vals, err = app.rpCallSlice(start, start+DefaultBlockSize, ctx.id, targetNode)
+				vals, err = app.rpCallSlice(start, start+app.BlockSize, ctx.id, targetNode)
 				if err != nil || vals.Length() == 0 {
 					return nil, err
 				}
@@ -301,7 +316,7 @@ func (app *App) procInstance(ctx *Context) Processor {
 				ctx.cache.setSlice(start, vals)
 				// Return only the value for key requested (not the slice).
 				// blockIndex() maps the requested key to the slice index.
-				return vals.Data[blockIndex(key, DefaultBlockSize)], nil
+				return vals.Data[blockIndex(key, app.BlockSize)], nil
 			}
 		}
 
@@ -329,22 +344,12 @@ func (p Processor) Map(start, end uint64) (values []Value, err error) {
 	return
 }
 
-// MapAllN applies the processor to the key range {start..}.
-// Divides the work among N workers to do parallel processing.
-// The blockSize is the number of values sent to remote nodes
-// in a batch. Bigger blocks are more efficient but consume
-// more memory add latency.
-func (p Processor) MapAllN(start uint64, numWorkers int, blockSize uint64) chan Value {
-
-	out := make(chan Value, numWorkers)
-	go master(p, numWorkers, blockSize, out)
+// MapAll applies the processor to the processor values
+// with key range {start..}.
+func (p Processor) MapAll(start uint64, ctx *Context) chan Value {
+	out := make(chan Value, ctx.app.NumWorkers)
+	go master(p, ctx.app.NumWorkers, ctx.app.BlockSize, out)
 	return out
-}
-
-// Same as MapAllN but uses default values for the number of
-// workers and block size.
-func (p Processor) MapAll(start uint64) chan Value {
-	return p.MapAllN(start, DefaultNumWorkers, DefaultBlockSize)
 }
 
 // Provides keys to workers.

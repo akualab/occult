@@ -1,6 +1,10 @@
 app:
   name: "cf"
   cache_cap: 2000
+  num_workers: 2
+  block_size: 10
+  num_retries: 20
+  go_max_procs: 2
 cluster:
   name: "local"
   nodes:

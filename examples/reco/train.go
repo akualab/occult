@@ -87,7 +87,7 @@ func aggCFFunc(idx uint64, ctx *occult.Context) (occult.Value, error) {
 		return nil, occult.ErrEndOfArray
 	}
 	cf := NewCF(opt.alpha)
-	ch := ctx.Inputs()[0].MapAll(0)
+	ch := ctx.Inputs()[0].MapAll(0, ctx)
 	for {
 		v, ok := <-ch
 		if !ok {
