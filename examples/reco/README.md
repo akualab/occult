@@ -114,6 +114,44 @@ Chunk Size   Cache Cap     Time
 200          c >= 400      ~7 seconds
 100          400           ~5 minutes
 ```
+Experiment on Intel i7 with 4 cores (8 logical cores):
+
+```
+num_workers block_size  go_max_proc num_nodes   time    improv.
+----------------------------------------------------------------
+1           1           1           1           5.4     baseline
+2           1           1           1           4.4     18%
+4           1           1           1           5.4
+2           1           2           1           4.5
+2           1           4           1           4.5
+4           1           4           1           4.5
+8           1           8           1           4.6
+----------------------------------------------------------------
+1           1           1           2           8.6     -6%
+2           1           1           2           7.6
+2           1           2           2           5.5
+4           1           4           2           3.9
+8           1           8           2           3.2
+8           4           8           2           3.1
+8           8           8           2           3.0*    44%
+8           12          8           2           3.1
+----------------------------------------------------------------
+
+```
+
+* num_workers: concurrent workers when executing a map operation.
+* block_size: number of values sent as a batch across nodes in the cluster.
+* go_max_proc: num processes in Go runtime.
+* num_nodes: compare single node vs cluster with two nodes on the same host.
+* time: time that takes to compute the correct result (excluding initialization)
+* best performance on single node is 4.4 due to using concurrent workers.
+* adding a node and running with baseline config degrades perf. by 6%
+* best perf. on cluster is 3.0 or 44% better than baseline.
+* these improvements are on top of using caching.
+
+Conclusion: results look encouraging. Still need to test on multiple hosts to see how
+it scales. Need a more compute intensive task with a big data set stored on a real data
+store.
 
 ## References
 
